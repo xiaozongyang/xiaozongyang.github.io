@@ -6,7 +6,7 @@
   <link href="/atom.xml" rel="self"/>
   
   <link href="http://xiaozongyang.github.io/"/>
-  <updated>2020-06-28T16:47:30.862Z</updated>
+  <updated>2020-07-05T11:52:57.934Z</updated>
   <id>http://xiaozongyang.github.io/</id>
   
   <author>
@@ -15,6 +15,31 @@
   </author>
   
   <generator uri="https://hexo.io/">Hexo</generator>
+  
+  <entry>
+    <title>arts-20200705</title>
+    <link href="http://xiaozongyang.github.io/2020/07/05/arts-20200705/"/>
+    <id>http://xiaozongyang.github.io/2020/07/05/arts-20200705/</id>
+    <published>2020-07-05T10:56:36.000Z</published>
+    <updated>2020-07-05T11:52:57.934Z</updated>
+    
+    <content type="html"><![CDATA[<h1 id="Algorithm"><a href="#Algorithm" class="headerlink" title="Algorithm"></a>Algorithm</h1><ul><li>题目：<a href="https://leetcode-cn.com/problems/find-pivot-index/" target="_blank" rel="noopener">LeetCode-724 寻找数据的中心索引</a></li><li>分析<ul><li>根据题目定定义，中心索引 i 左边和右边的元素之和相等，最直接的思路二层循环暴力来算，但是实际上 <ul><li><code>leftSum(i + 1) = leftSum(i) + nums[i]</code>，其中 <code>leftSum(i) = nums[0] + nums[1] + ... + nums[i - 1]</code></li><li><code>rightSum(i + 1) = rightSum(i + 1) + nums[i]</code>，其中 <code>rightSum(i + 1) = nums[i + 2] + nums[i + 3] + ... + nums[nums.length - 1]</code></li></ul></li><li>需要注意情况，当 i 左边或右边没有元素时，和为 0</li></ul></li><li>解法<ol><li>如果 <code>nums.length &lt; 2</code> 则中心索引为 <code>i</code></li><li>先算出 nums[1] 到 nums[nums.length -1] 之和记为初始 rightSum，初始 leftSum 为 0</li><li>从下标 1 开始遍历 nums，如果 leftSum 和 rightSum 相等或i == nums.length 时结束，如果 i &lt; nums.lrgnth 返回 i，否则返回 -1</li></ol></li><li>代码<figure class="highlight java"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br></pre></td><td class="code"><pre><span class="line"><span class="function"><span class="keyword">public</span> <span class="keyword">int</span> <span class="title">pivotIndex</span><span class="params">(<span class="keyword">int</span>[] nums)</span> </span>&#123;</span><br><span class="line">       <span class="keyword">if</span> (nums.length == <span class="number">0</span>) &#123;</span><br><span class="line">           <span class="keyword">return</span> -<span class="number">1</span>;</span><br><span class="line">       &#125;</span><br><span class="line">       <span class="keyword">if</span> (nums.length == <span class="number">1</span>) &#123;</span><br><span class="line">           <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">       &#125;</span><br><span class="line"></span><br><span class="line">       <span class="keyword">int</span> left = <span class="number">0</span>;</span><br><span class="line">       <span class="keyword">int</span> right = <span class="number">0</span>;</span><br><span class="line"></span><br><span class="line">       <span class="keyword">for</span> (<span class="keyword">int</span> i = <span class="number">1</span>; i != nums.length; i++) &#123;</span><br><span class="line">           right += nums[i];</span><br><span class="line">       &#125;</span><br><span class="line"></span><br><span class="line">       <span class="keyword">int</span> i = <span class="number">1</span>;</span><br><span class="line">       <span class="keyword">while</span> (i &lt; nums.length &amp;&amp; left != right) &#123;</span><br><span class="line">           left += nums[i - <span class="number">1</span>];</span><br><span class="line">           right -= nums[i];</span><br><span class="line">           i++;</span><br><span class="line">       &#125;</span><br><span class="line"></span><br><span class="line">       <span class="keyword">return</span> left == right ? i - <span class="number">1</span> : -<span class="number">1</span>;</span><br><span class="line">   &#125;</span><br></pre></td></tr></table></figure></li></ul><h1 id="Review"><a href="#Review" class="headerlink" title="Review"></a>Review</h1><ul><li>原文地址：<a href="https://pdos.csail.mit.edu/6.824/papers/mapreduce.pdf" target="_blank" rel="noopener">MapReduce: Simplified Data Processing on Large Clusters</a></li><li>Google 经典论文，提出了 MapReduce 编程模型，以及该模型在分布式系统下实现的一些要点和优化<ul><li>背景：Google 处理大规模的数据需要解决并行化、数据分发、故障处理的问题</li><li>解法：提出 MapReduce 的编程模型，隐藏并行、数据分许、故障处理的细节<ul><li>Map: <code>(k1, v1) -&gt; list(k2, v2)</code> 根据输入的 <code>key/value</code> 对生产新的 <code>key/value</code> 对的集合，作为中间结果，<strong>计算逻辑需要用户实现</strong></li><li>Reduce: <code>(k2, list(v2)) -&gt; list(v2)</code> 从同一个 <code>key</code> 有序结合中计算得出最终结果，<strong>计算逻辑需要用户实现</strong></li></ul></li><li>影响<ul><li>提出了处理海量数据的通用方案，推动了大数据计算领域发展</li><li>简化了并行、故障处理逻辑，提升了研发效果</li><li>提供了水平扩展能力，可以通过加机器来提升性能</li></ul></li><li>工程设计<ul><li>Master Slave 架构：Master 负责监控Woker状态、调度任务</li><li>并行策略：<ol><li>输入文件进行按切分，本质是上做分片，每个分片有对应的 Worker 进行处理</li><li>Map 和 Reducer 阶段，Worker 之间没有数据重叠，因此不存在并发问题</li></ol></li><li>故障处理策略：<strong>重新执行</strong><ul><li>执行 Map 任务的 Worker 故障：重新执行该 Worker 的 Map 任务以及相关的 Reduce 任务</li><li>执行 Reduce 任务的 Worker 故障：重新执行该 Worker 的 Reduce 任务</li></ul></li><li>优化<ul><li>本地化：MapReduce 的输入输出为 GFS 分布式文件系统，每个文件存多个副本（通常为3），给 Worker 分配任务时尽量分配给保存输入数据副本的 Worker，不满足条件时，尽量分给靠近持有副本结点的 Worker，降低网络 IO 开销</li><li>Backup：当执行任务快结束时，还有某个结点特别慢（可能是机器硬件差或故障等原因）影响整个任务进度，会在其他结点执行一个 Backup 任务，这两个任务任意一个执行完就算执行完成</li></ul></li></ul></li></ul></li></ul><h1 id="Tip"><a href="#Tip" class="headerlink" title="Tip"></a>Tip</h1><ol><li>以 SDK 的形式提供能力是常见的做法，但是升级会非常头疼，可以考虑把 SDK api 声明暴露给用户，以 javaagent 的方式提供实现可以缓解这个问题，可以在这个方向有些探索</li><li>以 javaagent 的方式提供装饰逻辑，来代替 cglib 看起来具有分离、对用户无感知的优点</li></ol><h1 id="Share"><a href="#Share" class="headerlink" title="Share"></a>Share</h1><p>读了《非暴力沟通》前两章，有几个印象比较深的点：</p><ol><li>沟通的表达方式很重要，并且是可以后天训练的，有意识的行为比纯本能的行为通常更有效</li><li>学会区分观察和评论，不要习惯性采用防御性的姿态，学会区分是客观事实的评价，还是主观个人的评论</li></ol>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;h1 id=&quot;Algorithm&quot;&gt;&lt;a href=&quot;#Algorithm&quot; class=&quot;headerlink&quot; title=&quot;Algorithm&quot;&gt;&lt;/a&gt;Algorithm&lt;/h1&gt;&lt;ul&gt;
+&lt;li&gt;题目：&lt;a href=&quot;https://leetcode-cn.com/
+      
+    
+    </summary>
+    
+    
+    
+      <category term="ARTS" scheme="http://xiaozongyang.github.io/tags/ARTS/"/>
+    
+  </entry>
   
   <entry>
     <title>arts-20200628</title>
