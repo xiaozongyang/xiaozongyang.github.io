@@ -7,3 +7,4 @@ public/
 .deploy*/node_modules
 themes*
 package-lock.json
+.deploy_git/
