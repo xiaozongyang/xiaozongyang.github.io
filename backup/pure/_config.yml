@@ -7,11 +7,7 @@
 menu:
   Home: .
   Archives: archives  # 归档
-  Categories: categories  # 分类
-  Tags: tags  # 标签
   Repository: repository  # github repositories
-  Books: books  # 豆瓣书单
-  Links: links  # 友链
   About: about  # 关于
 
 # Enable/Disable menu icons
@@ -27,7 +23,7 @@ menu_icons:
   about: icon-cup-fill
 
 # rss
-rss: /atom.xml
+# rss: /atom.xml
 
 # Site
 site:
@@ -36,7 +32,7 @@ site:
     width: 40
     height: 40
     url: ../images/logo.png
-  title: Hexo # 页面title
+  title: XiaoZongyang's Blog # 页面title
   favicon: /favicon.png
   board: <p>欢迎交流与分享经验!</p> # 站点公告
   copyright: false # 底部版权信息
@@ -46,13 +42,13 @@ config:
   skin: # 主题颜色 theme-black theme-blue theme-green theme-purple
   layout: main-center # 布局方式 main-left main-center main-right
   toc: true # 是否开启文章章节目录导航
-  menu_highlight: false # 是否开启当前菜单高亮显示
+  menu_highlight: true # 是否开启当前菜单高亮显示
   thumbnail: false # enable posts thumbnail, options: true, false
   excerpt_link: Read More
 
 # Pagination
 pagination:
-  number: false
+  number: true
   prev: 
     alwayShow: true
   next:
@@ -61,7 +57,7 @@ pagination:
 # Sidebar
 sidebar: right
 widgets:
-  - board  
+  - board
   - category
   - tag
   - tagcloud
@@ -107,7 +103,7 @@ share:
 
 # Github
 github: 
-  username: cofess  # github username
+  username: xiaozongyang # github username
 
 # Comment
 # Gitment
@@ -157,16 +153,15 @@ douban:
   user: # 豆瓣用户名
   start: 0 # 从哪一条记录开始
   count: 100 # 获取豆瓣书单数据条数
-  
 # PV
 pv:
   busuanzi:
-    enable: false  # 不蒜子统计
+    enable: true # 不蒜子统计
   leancloud:
     enable: false  # leancloud统计
     app_id: # leancloud <AppID>
     app_key: # leancloud <AppKey>
-        
+
 # wordcount
 postCount:
   enable: false

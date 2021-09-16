@@ -4,7 +4,8 @@ date: 2021-09-14 23:05:06
 tags:
     - java
     - maven
-categories: 总结
+categories:
+    - summary
 ---
 # 获取 Jar 包版本号
 

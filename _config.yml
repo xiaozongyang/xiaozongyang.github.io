@@ -12,14 +12,15 @@ language: zh-cn
 timezone: ""
 
 # URL
-## If your site is put in a subdirectory, set url as 'http://yoursite.com/child' and root as '/child/'
 url: http://xiaozongyang.github.io
 root: /
 permalink: :year/:month/:day/:title/
 permalink_defaults:
 pretty_urls:
-  trailing_index: true # Set to false to remove trailing 'index.html' from permalinks
-  trailing_html: true # Set to false to remove trailing '.html' from permalinks
+  # Set to false to remove trailing 'index.html' from permalinks
+  trailing_index: true
+  # Set to false to remove trailing '.html' from permalinks
+  trailing_html: true
 
 # Directory
 source_dir: source
@@ -39,7 +40,7 @@ external_link:
   enable: true # Open external links in new tab
   field: site # Apply to the whole site
   exclude: ""
-filename_case: 0
+filename_case: 1
 render_drafts: false
 post_asset_folder: true
 relative_link: false
