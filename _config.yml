@@ -108,3 +108,8 @@ deploy:
 marked:
   prependRoot: true
   postAsset: true
+
+# Mermaid chart
+## mermaid url https://github.com/knsv/mermaid
+mermaid:
+  enable: true
