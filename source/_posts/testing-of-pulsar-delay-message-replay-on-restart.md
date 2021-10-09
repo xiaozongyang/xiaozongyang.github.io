@@ -16,7 +16,11 @@ pulsar 将延时消息的索引保存在内存中，在 Broker 重启的时候�
     4. Consume 数量
 
 ## 测试方案
+
 在本地部署 Pulsar Standalone 进行测试，每个 case 测试 5 次，记录测试结果，测试流程如下图所示：
+
+{% asset_img local-delayed-message-test-flow.jpg %}
+
 1.  启动 Broker
 2.  启动 Producer，向测试 Topic 生产 200W 条消息，延时 1 小时
 3.  向测试 Topic 生成 16W 条消息，延时 5 分钟
@@ -24,6 +28,7 @@ pulsar 将延时消息的索引保存在内存中，在 Broker 重启的时候�
 5. 启动 Consumer，消费 10 条消息，记录下第一条消息的消费时间
 6. 启动 Broker
 7. Conusmer 退出后，KIll -9 杀 Broker，转 4，直到收集到 10 个测试结果
+
 
 
 ### 测试环境及参数说明
