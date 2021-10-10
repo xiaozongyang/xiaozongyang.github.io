@@ -45,11 +45,11 @@ tags:
     1. 加入结点后，需要指定 master-slave 关系、指定 topic(queue)-broker 的分布关系
 7. 容错
     1. 错误感知
-        1. NameServer 向 Broker 发新图，能够感知 Broker 不可以，及时更新路由表信息
+        1. NameServer 向 Broker 发心跳，能够感知 Broker 不可用，及时更新路由表信息
         2. Master Broker 定时向 Slave Broker 发心跳，能感知到 Broker 不可用
         3. Producer/Client 定时向所关心的所有 Broker 发心跳，能感知到 Broker 不可以
     2. 错误恢复
-        1. 不支持自动的主从切换，有运维命令一键切(需要听写)
+        1. 不支持自动的主从切换，有运维命令一键切(需要停写)
         2. 支持把 topic 的部分 queue 迁移到可用的 Broker 上，但是不迁移历史数据、期间可能会丢数据
 
 ## Pulsar
