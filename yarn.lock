@@ -1204,7 +1204,7 @@ hexo-deployer-git@^2.1.0:
 
 hexo-filter-mermaid-diagrams@^1.0.5:
   version "1.0.5"
-  resolved "https://registry.npmjs.org/hexo-filter-mermaid-diagrams/-/hexo-filter-mermaid-diagrams-1.0.5.tgz#1e32fc4e46eab90cf3a375b5c830a9f2aef1640f"
+  resolved "https://registry.yarnpkg.com/hexo-filter-mermaid-diagrams/-/hexo-filter-mermaid-diagrams-1.0.5.tgz#1e32fc4e46eab90cf3a375b5c830a9f2aef1640f"
   integrity sha512-/IkIMKn4V7PBAzMJGNDPSoBFlv1JGvIELXm5AWkR8N5N44kDTNJLtabb4h095UhZQIXOrF9zA1WYhi6wrWLW5Q==
   dependencies:
     deep-assign "^2.0.0"
