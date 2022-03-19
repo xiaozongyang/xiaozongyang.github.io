@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang=zh>
+<head>
+  <meta charset="utf-8">
+  
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui">
+  <meta name="renderer" content="webkit">
+  <meta http-equiv="Cache-Control" content="no-transform" />
+  <meta http-equiv="Cache-Control" content="no-siteapp" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="format-detection" content="telephone=no,email=no,adress=no">
+  <!-- Color theme for statusbar -->
+  <meta name="theme-color" content="#000000" />
+  <!-- 强制页面在当前窗口以独立页面显示,防止别人在框架里调用页面 -->
+  <meta http-equiv="window-target" content="_top" />
+  
+  
+  <title>pulsar 延时消息重放时间测试 | XiaoZongyang&#39;s Blog</title>
+  <meta name="description" content="背景pulsar 将延时消息的索引保存在内存中，在 Broker 重启的时候需要将磁盘上的索引冲放到内存中来，如果重建索引的耗时过久，将会影响延时消息的时间准确性。测试目的  测试 Broker 重启时重建延时消息索引的时间，评估延迟是否可接受 测试影响 Broker 重建延时消息索引的因素，包括 消息体大小 重放消息数量 Subscription 数量 Consume 数量    测试方案在本地">
+<meta property="og:type" content="article">
+<meta property="og:title" content="pulsar 延时消息重放时间测试">
+<meta property="og:url" content="http://xiaozongyang.github.io/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/index.html">
+<meta property="og:site_name" content="Xiao Zongyang&#39;s Blog">
+<meta property="og:description" content="背景pulsar 将延时消息的索引保存在内存中，在 Broker 重启的时候需要将磁盘上的索引冲放到内存中来，如果重建索引的耗时过久，将会影响延时消息的时间准确性。测试目的  测试 Broker 重启时重建延时消息索引的时间，评估延迟是否可接受 测试影响 Broker 重建延时消息索引的因素，包括 消息体大小 重放消息数量 Subscription 数量 Consume 数量    测试方案在本地">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/local-delayed-message-test-flow.jpg">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/baseline.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/case1.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/case2.png">
+<meta property="article:published_time" content="2021-10-09T13:00:47.000Z">
+<meta property="article:modified_time" content="2022-01-04T04:18:52.720Z">
+<meta property="article:author" content="Xiao Zongyang">
+<meta property="article:tag" content="mq">
+<meta property="article:tag" content="pulsar">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://xiaozongyang.github.io/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/local-delayed-message-test-flow.jpg">
+  <!-- Canonical links -->
+  <link rel="canonical" href="http://xiaozongyang.github.io/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/index.html">
+  
+  
+    <link rel="icon" href="/favicon.png" type="image/x-icon">
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+  
+  
+  
+  
+<meta name="generator" content="Hexo 4.2.1"><link rel="alternate" href="/atom.xml" title="Xiao Zongyang's Blog" type="application/atom+xml">
+</head>
+
+
+<body class="main-center" itemscope itemtype="http://schema.org/WebPage">
+  <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+  <div class="slimContent">
+    <div class="navbar-header">
+      
+      
+      <div class="profile-block text-center">
+        <a id="avatar" href="https://github.com/xiaozongyang" target="_blank">
+          <img class="img-circle img-rotate" src="/images/avatar.jpg" width="200" height="200">
+        </a>
+        <h2 id="name" class="hidden-xs hidden-sm">肖宗阳</h2>
+        <h3 id="title" class="hidden-xs hidden-sm hidden-md">Inf Developer</h3>
+        <small id="location" class="text-muted hidden-xs hidden-sm"><i class="icon icon-map-marker"></i> Beijig, China</small>
+      </div>
+      
+      <div class="search" id="search-form-wrap">
+
+    <form class="search-form sidebar-form">
+        <div class="input-group">
+            <input type="text" class="search-form-input form-control" placeholder="Search" />
+            <span class="input-group-btn">
+                <button type="submit" class="search-form-submit btn btn-flat" onclick="return false;"><i class="icon icon-search"></i></button>
+            </span>
+        </div>
+    </form>
+    <div class="ins-search">
+  <div class="ins-search-mask"></div>
+  <div class="ins-search-container">
+    <div class="ins-input-wrapper">
+      <input type="text" class="ins-search-input" placeholder="Type something..." x-webkit-speech />
+      <button type="button" class="close ins-close ins-selectable" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">×</span></button>
+    </div>
+    <div class="ins-section-wrapper">
+      <div class="ins-section-container"></div>
+    </div>
+  </div>
+</div>
+
+
+</div>
+      <button class="navbar-toggle collapsed" type="button" data-toggle="collapse" data-target="#main-navbar" aria-controls="main-navbar" aria-expanded="false">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+    </div>
+    <nav id="main-navbar" class="collapse navbar-collapse" itemscope itemtype="http://schema.org/SiteNavigationElement" role="navigation">
+      <ul class="nav navbar-nav main-nav menu-highlight">
+        
+        
+        <li class="menu-item menu-item-home">
+          <a href="/.">
+            
+            <i class="icon icon-home-fill"></i>
+            
+            <span class="menu-title">Home</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives">
+            
+            <i class="icon icon-archives-fill"></i>
+            
+            <span class="menu-title">Archives</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-repository">
+          <a href="/repository">
+            
+            <i class="icon icon-project"></i>
+            
+            <span class="menu-title">Repository</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about">
+            
+            <i class="icon icon-cup-fill"></i>
+            
+            <span class="menu-title">About</span>
+          </a>
+        </li>
+        
+      </ul>
+      
+	
+    <ul class="social-links">
+    	
+        <li><a href="https://github.com/xiaozongyang" target="_blank" title="Github" data-toggle=tooltip data-placement=top><i class="icon icon-github"></i></a></li>
+        
+    </ul>
+
+    </nav>
+  </div>
+</header>
+
+  
+    <aside class="sidebar" itemscope itemtype="http://schema.org/WPSideBar">
+  <div class="slimContent">
+    
+      <div class="widget">
+    <h3 class="widget-title">Board</h3>
+    <div class="widget-body">
+        <div id="board">
+            <div class="content">
+                <p>欢迎交流与分享经验!</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Categories</h3>
+    <div class="widget-body">
+      <ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/summary/">summary</a><span class="category-list-count">1</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget-body">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/arts/" rel="tag">ARTS</a><span class="tag-list-count">5</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/prometheus/" rel="tag">Prometheus</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/pulsar/" rel="tag">Pulsar</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/rocketmq/" rel="tag">RocketMQ</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/victoriametrics/" rel="tag">VictoriaMetrics</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/apue/" rel="tag">apue</a><span class="tag-list-count">17</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/benchmark/" rel="tag">benchmark</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/java/" rel="tag">java</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/jmh/" rel="tag">jmh</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/kotlin/" rel="tag">kotlin</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/kv/" rel="tag">kv</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/maven/" rel="tag">maven</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/mq/" rel="tag">mq</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/paper/" rel="tag">paper</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/pulsar/" rel="tag">pulsar</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/summary/" rel="tag">summary</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/unix/" rel="tag">unix</a><span class="tag-list-count">17</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F/" rel="tag">分布式</a><span class="tag-list-count">12</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%AD%98%E5%82%A8/" rel="tag">存储</a><span class="tag-list-count">13</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/" rel="tag">文件系统</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB/" rel="tag">源码阅读</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" rel="tag">读书笔记</a><span class="tag-list-count">30</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget-body tagcloud">
+      <a href="/tags/arts/" style="font-size: 13.33px;">ARTS</a> <a href="/tags/prometheus/" style="font-size: 13.17px;">Prometheus</a> <a href="/tags/pulsar/" style="font-size: 13px;">Pulsar</a> <a href="/tags/rocketmq/" style="font-size: 13.17px;">RocketMQ</a> <a href="/tags/victoriametrics/" style="font-size: 13px;">VictoriaMetrics</a> <a href="/tags/apue/" style="font-size: 13.83px;">apue</a> <a href="/tags/benchmark/" style="font-size: 13px;">benchmark</a> <a href="/tags/java/" style="font-size: 13.17px;">java</a> <a href="/tags/jmh/" style="font-size: 13px;">jmh</a> <a href="/tags/kotlin/" style="font-size: 13px;">kotlin</a> <a href="/tags/kv/" style="font-size: 13px;">kv</a> <a href="/tags/maven/" style="font-size: 13px;">maven</a> <a href="/tags/mq/" style="font-size: 13.17px;">mq</a> <a href="/tags/paper/" style="font-size: 13px;">paper</a> <a href="/tags/pulsar/" style="font-size: 13px;">pulsar</a> <a href="/tags/summary/" style="font-size: 13px;">summary</a> <a href="/tags/unix/" style="font-size: 13.83px;">unix</a> <a href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F/" style="font-size: 13.5px;">分布式</a> <a href="/tags/%E5%AD%98%E5%82%A8/" style="font-size: 13.67px;">存储</a> <a href="/tags/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/" style="font-size: 13px;">文件系统</a> <a href="/tags/%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB/" style="font-size: 13px;">源码阅读</a> <a href="/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" style="font-size: 14px;">读书笔记</a>
+    </div>
+  </div>
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Archive</h3>
+    <div class="widget-body">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/02/">二月 2022</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/01/">一月 2022</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/10/">十月 2021</a><span class="archive-list-count">19</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/09/">九月 2021</a><span class="archive-list-count">16</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/04/">四月 2021</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/03/">三月 2021</a><span class="archive-list-count">2</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/07/">七月 2020</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/06/">六月 2020</a><span class="archive-list-count">2</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget-body">
+      <ul class="recent-post-list list-unstyled no-thumbnail">
+        
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/" class="title">Windows Azure Storage: A highly Available Cloud Storage Service with Strong Consistentcy</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2022-02-28T03:24:10.000Z" itemprop="datePublished">2022-02-28</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2022/01/04/Blackbox-Exporter-Url-Probe-%E8%B0%83%E7%A0%94/" class="title">Blackbox-Exporter-Url-Probe-调研</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2022-01-04T04:18:52.527Z" itemprop="datePublished">2022-01-04</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/" class="title">pulsar 延时消息重放时间测试</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T13:00:47.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/distributed-storage-system-view-on-mq/" class="title">从分布式存储系统的角度看 MQ</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T12:50:24.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/17-advanced-ipc/" class="title">第 17 章 - 高级进程间通信</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T10:22:31.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+      </ul>
+    </div>
+  </div>
+  
+
+    
+  </div>
+</aside>
+
+  
+  
+<main class="main" role="main">
+  <div class="content">
+  <article id="post-testing-of-pulsar-delay-message-replay-on-restart" class="article article-type-post" itemscope itemtype="http://schema.org/BlogPosting">
+    
+    <div class="article-header">
+      
+        
+  
+    <h1 class="article-title" itemprop="name">
+      pulsar 延时消息重放时间测试
+    </h1>
+  
+
+      
+      <div class="article-meta">
+        <span class="article-date">
+    <i class="icon icon-calendar-check"></i>
+	<a href="/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/" class="article-date">
+	  <time datetime="2021-10-09T13:00:47.000Z" itemprop="datePublished">2021-10-09</time>
+	</a>
+</span>
+        
+        
+  <span class="article-tag">
+    <i class="icon icon-tags"></i>
+	<a class="article-tag-link" href="/tags/mq/" rel="tag">mq</a>, <a class="article-tag-link" href="/tags/pulsar/" rel="tag">pulsar</a>
+  </span>
+
+
+        
+	<span class="article-read hidden-xs">
+	    <i class="icon icon-eye-fill" aria-hidden="true"></i>
+	    <span id="busuanzi_container_page_pv">
+			<span id="busuanzi_value_page_pv">0</span>
+		</span>
+	</span>
+
+
+        <span class="post-comment"><i class="icon icon-comment"></i> <a href="/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/#comments" class="article-comment-link">Comments</a></span>
+        
+      </div>
+    </div>
+    <div class="article-entry marked-body" itemprop="articleBody">
+      
+        <h2 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h2><p>pulsar 将延时消息的索引保存在内存中，在 Broker 重启的时候需要将磁盘上的索引冲放到内存中来，如果重建索引的耗时过久，将会影响延时消息的时间准确性。<br>测试目的</p>
+<ol>
+<li>测试 Broker 重启时重建延时消息索引的时间，评估延迟是否可接受</li>
+<li>测试影响 Broker 重建延时消息索引的因素，包括<ol>
+<li>消息体大小</li>
+<li>重放消息数量</li>
+<li>Subscription 数量</li>
+<li>Consume 数量</li>
+</ol>
+</li>
+</ol>
+<h2 id="测试方案"><a href="#测试方案" class="headerlink" title="测试方案"></a>测试方案</h2><p>在本地部署 Pulsar Standalone 进行测试，每个 case 测试 5 次，记录测试结果，测试流程如下图所示：</p>
+<img src="/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/local-delayed-message-test-flow.jpg" class="">
+
+<ol>
+<li>启动 Broker</li>
+<li>启动 Producer，向测试 Topic 生产 200W 条消息，延时 1 小时</li>
+<li>向测试 Topic 生成 16W 条消息，延时 5 分钟</li>
+<li>Kill Broker</li>
+<li>启动 Consumer，消费 10 条消息，记录下第一条消息的消费时间</li>
+<li>启动 Broker</li>
+<li>Conusmer 退出后，KIll -9 杀 Broker，转 4，直到收集到 10 个测试结果</li>
+</ol>
+<h3 id="测试环境及参数说明"><a href="#测试环境及参数说明" class="headerlink" title="测试环境及参数说明"></a>测试环境及参数说明</h3><ol>
+<li>Broker 数量 1</li>
+<li>Topic 数量 1</li>
+<li>消息数量 200W</li>
+<li>消息种类  延时消息</li>
+<li>Producer 数量 16</li>
+<li>Consumer 数量 1</li>
+<li>单条消息大小<ol>
+<li>100B</li>
+<li>1KB</li>
+<li>10KB</li>
+</ol>
+</li>
+<li>测试机器 Macbook Pro 20 款<ol>
+<li>CPU 4c 2GHz</li>
+<li>内存 16GB</li>
+</ol>
+</li>
+</ol>
+<h2 id="测试结论"><a href="#测试结论" class="headerlink" title="测试结论"></a>测试结论</h2><p>单次消息重放的延迟如下表所示，可以得出结论</p>
+<h3 id="基准"><a href="#基准" class="headerlink" title="基准"></a>基准</h3><p>下表为 broker 重启后消费第一条消息的耗时，作为 Broker 启动耗时的基准</p>
+<table>
+<thead>
+<tr>
+<th>次数/消息体大小/延迟(s)</th>
+<th>100B</th>
+<th>1KB</th>
+<th>10KB</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>20.897</td>
+<td>21.266</td>
+<td>22.3</td>
+</tr>
+<tr>
+<td>2</td>
+<td>22.634</td>
+<td>18.350</td>
+<td>21.592</td>
+</tr>
+<tr>
+<td>3</td>
+<td>19.401</td>
+<td>22.194</td>
+<td>20.199</td>
+</tr>
+<tr>
+<td>4</td>
+<td>22.501</td>
+<td>19.882</td>
+<td>21.795</td>
+</tr>
+<tr>
+<td>5</td>
+<td>21.313</td>
+<td>21.904</td>
+<td>24.051</td>
+</tr>
+<tr>
+<td>6</td>
+<td>21.233</td>
+<td>22.187</td>
+<td>21.835</td>
+</tr>
+<tr>
+<td>7</td>
+<td>21.232</td>
+<td>23.313</td>
+<td>24.541</td>
+</tr>
+<tr>
+<td>8</td>
+<td>22.695</td>
+<td>20.459</td>
+<td>20.21</td>
+</tr>
+<tr>
+<td>9</td>
+<td>19.793</td>
+<td>21.845</td>
+<td>20.858</td>
+</tr>
+<tr>
+<td>10</td>
+<td>19.642</td>
+<td>22.579</td>
+<td>20.925</td>
+</tr>
+<tr>
+<td>min</td>
+<td>19.401</td>
+<td>18.35</td>
+<td>20.199</td>
+</tr>
+<tr>
+<td>max</td>
+<td>22.695</td>
+<td>23.313</td>
+<td>24.541</td>
+</tr>
+<tr>
+<td>avg</td>
+<td>21.134</td>
+<td>21.397</td>
+<td>21.831</td>
+</tr>
+</tbody></table>
+<h3 id="结论"><a href="#结论" class="headerlink" title="结论"></a>结论</h3><p>如下图所示，Broker 启动到 Consumer 消费到第一条消息的时间基本为 20s，与消息体本身的大小基本无关。</p>
+<img src="/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/baseline.png" class="">
+
+<h3 id="Case-1-消息体大小-→-重放时间"><a href="#Case-1-消息体大小-→-重放时间" class="headerlink" title="Case 1 消息体大小 → 重放时间"></a>Case 1 消息体大小 → 重放时间</h3><table>
+<thead>
+<tr>
+<th>次数/消息体大小/延迟(s)</th>
+<th>100B</th>
+<th>1KB</th>
+<th>10KB</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>56.967</td>
+<td>64.377</td>
+<td>78.725</td>
+</tr>
+<tr>
+<td>2</td>
+<td>58.098</td>
+<td>65.492</td>
+<td>87.969</td>
+</tr>
+<tr>
+<td>3</td>
+<td>59.261</td>
+<td>67.188</td>
+<td>71.241</td>
+</tr>
+<tr>
+<td>4</td>
+<td>62.790</td>
+<td>78.362</td>
+<td>82.823</td>
+</tr>
+<tr>
+<td>5</td>
+<td>55.250</td>
+<td>62.649</td>
+<td>78.524</td>
+</tr>
+<tr>
+<td>6</td>
+<td>56.698</td>
+<td>66.623</td>
+<td>86.247</td>
+</tr>
+<tr>
+<td>7</td>
+<td>57.641</td>
+<td>63.832</td>
+<td>77.722</td>
+</tr>
+<tr>
+<td>8</td>
+<td>63.726</td>
+<td>63.275</td>
+<td>85.135</td>
+</tr>
+<tr>
+<td>9</td>
+<td>57.045</td>
+<td>62.898</td>
+<td>88.610</td>
+</tr>
+<tr>
+<td>10</td>
+<td>59.613</td>
+<td>64.909</td>
+<td>84.985</td>
+</tr>
+<tr>
+<td>min</td>
+<td>55.256</td>
+<td>2.649</td>
+<td>71.241</td>
+</tr>
+<tr>
+<td>max</td>
+<td>63.726</td>
+<td>78.362</td>
+<td>88.61</td>
+</tr>
+<tr>
+<td>avg</td>
+<td>58.708</td>
+<td>965.9605</td>
+<td>82.1981</td>
+</tr>
+</tbody></table>
+<h4 id="结论-1"><a href="#结论-1" class="headerlink" title="结论"></a>结论</h4><p>如下图所示，重放 2M 延时消息的耗时约为 40 ~ 60 s（减掉基准启动时间之后），随消息体大小增加而增加。</p>
+<img src="/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/case1.png" class="">
+
+
+<h3 id="Case-2-重放消息数量-→-重放时间"><a href="#Case-2-重放消息数量-→-重放时间" class="headerlink" title="Case 2 重放消息数量 → 重放时间"></a>Case 2 重放消息数量 → 重放时间</h3><table>
+<thead>
+<tr>
+<th>次数/消息数量/延迟(s)</th>
+<th>2M</th>
+<th>5M</th>
+<th>10M</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>56.967</td>
+<td>129.301</td>
+<td>199.07</td>
+</tr>
+<tr>
+<td>2</td>
+<td>58.098</td>
+<td>148.14</td>
+<td>186.66</td>
+</tr>
+<tr>
+<td>3</td>
+<td>59.261</td>
+<td>110.748</td>
+<td>201.107</td>
+</tr>
+<tr>
+<td>4</td>
+<td>62.79</td>
+<td>109.004</td>
+<td>190.389</td>
+</tr>
+<tr>
+<td>5</td>
+<td>55.25</td>
+<td>124.509</td>
+<td>181.921</td>
+</tr>
+<tr>
+<td>6</td>
+<td>56.698</td>
+<td>108.119</td>
+<td>183.779</td>
+</tr>
+<tr>
+<td>7</td>
+<td>57.641</td>
+<td>106.763</td>
+<td>193.303</td>
+</tr>
+<tr>
+<td>8</td>
+<td>63.726</td>
+<td>124.127</td>
+<td>186.575</td>
+</tr>
+<tr>
+<td>9</td>
+<td>57.045</td>
+<td>107.763</td>
+<td>184.699</td>
+</tr>
+<tr>
+<td>10</td>
+<td>59.613</td>
+<td>106.83</td>
+<td>185.984</td>
+</tr>
+<tr>
+<td>min</td>
+<td>55.25</td>
+<td>106.763</td>
+<td>181.921</td>
+</tr>
+<tr>
+<td>max</td>
+<td>63.726</td>
+<td>148.14</td>
+<td>201.107</td>
+</tr>
+<tr>
+<td>avg</td>
+<td>58.7089</td>
+<td>117.5304</td>
+<td>189.3487</td>
+</tr>
+</tbody></table>
+<p>如下图，随着重放消息数量增长，耗时线性增长，重放消息量越大耗时越久</p>
+<img src="/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/case2.png" class="">
+
+      
+    </div>
+    <div class="article-footer">
+      <blockquote class="mt-2x">
+  <ul class="post-copyright list-unstyled">
+    
+    <li class="post-copyright-link hidden-xs">
+      <strong>本文链接：</strong>
+      <a href="http://xiaozongyang.github.io/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/" title="pulsar 延时消息重放时间测试" target="_blank" rel="external">http://xiaozongyang.github.io/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/</a>
+    </li>
+    
+    <li class="post-copyright-license">
+      <strong>版权声明： </strong> 本博客所有文章除特别声明外，均采用 <a href="http://creativecommons.org/licenses/by/4.0/deed.zh" target="_blank" rel="external">CC BY 4.0 CN协议</a> 许可协议。转载请注明出处！
+    </li>
+  </ul>
+</blockquote>
+
+
+<div class="panel panel-default panel-badger">
+  <div class="panel-body">
+    <figure class="media">
+      <div class="media-left">
+        <a href="https://github.com/xiaozongyang" target="_blank" class="img-burn thumb-sm visible-lg">
+          <img src="/images/avatar.jpg" class="img-rounded w-full" alt="">
+        </a>
+      </div>
+      <div class="media-body">
+        <h3 class="media-heading"><a href="https://github.com/xiaozongyang" target="_blank"><span class="text-dark">肖宗阳</span><small class="ml-1x">Inf Developer</small></a></h3>
+        <div>基础架构工程师，专注可见性领域。</div>
+      </div>
+    </figure>
+  </div>
+</div>
+
+
+    </div>
+  </article>
+  
+    
+  <section id="comments">
+  	
+      <div id="vcomments"></div>
+    
+  </section>
+
+
+  
+</div>
+
+  <nav class="bar bar-footer clearfix" data-stick-bottom>
+  <div class="bar-inner">
+  
+  <ul class="pager pull-left">
+    
+    <li class="prev">
+      <a href="/2022/01/04/Blackbox-Exporter-Url-Probe-%E8%B0%83%E7%A0%94/" title="Blackbox-Exporter-Url-Probe-调研"><i class="icon icon-angle-left" aria-hidden="true"></i><span>&nbsp;&nbsp;Newer</span></a>
+    </li>
+    
+    
+    <li class="next">
+      <a href="/2021/10/09/distributed-storage-system-view-on-mq/" title="从分布式存储系统的角度看 MQ"><span>Older&nbsp;&nbsp;</span><i class="icon icon-angle-right" aria-hidden="true"></i></a>
+    </li>
+    
+    
+  </ul>
+  
+  
+  <!-- Button trigger modal -->
+  <button type="button" class="btn btn-fancy btn-donate pop-onhover bg-gradient-warning" data-toggle="modal" data-target="#donateModal"><span>$</span></button>
+  <!-- <div class="wave-icon wave-icon-danger btn-donate" data-toggle="modal" data-target="#donateModal">
+    <div class="wave-circle"><span class="icon"><i class="icon icon-bill"></i></span></div>
+  </div> -->
+  
+  
+  <div class="bar-right">
+    
+    <div class="share-component" data-sites="weibo,qq,wechat,facebook,twitter" data-mobile-sites="weibo,qq,qzone"></div>
+    
+  </div>
+  </div>
+</nav>
+  
+<!-- Modal -->
+<div class="modal modal-center modal-small modal-xs-full fade" id="donateModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content donate">
+      <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+      <div class="modal-body">
+        <div class="donate-box">
+          <div class="donate-head">
+            <p>Maybe you could buy me a cup of coffee.</p>
+          </div>
+          <div class="tab-content">
+            <div role="tabpanel" class="tab-pane fade active in" id="alipay">
+              <div class="donate-payimg">
+                <img src="/images/donate/alipayimg.png" alt="Scan Qrcode" title="Scan" />
+              </div>
+              <p class="text-muted mv">Scan this qrcode</p>
+              <p class="text-grey">Open alipay app scan this qrcode, buy me a coffee!</p>
+            </div>
+            <div role="tabpanel" class="tab-pane fade" id="wechatpay">
+              <div class="donate-payimg">
+                <img src="/images/donate/wechatpayimg.png" alt="Scan Qrcode" title="Scan" />
+              </div>
+              <p class="text-muted mv">Scan this qrcode</p>
+              <p class="text-grey">Open wechat app scan this qrcode, buy me a coffee!</p>
+            </div>
+          </div>
+          <div class="donate-footer">
+            <ul class="nav nav-tabs nav-justified" role="tablist">
+              <li role="presentation" class="active">
+                <a href="#alipay" id="alipay-tab" role="tab" data-toggle="tab" aria-controls="alipay" aria-expanded="true"><i class="icon icon-alipay"></i> alipay</a>
+              </li>
+              <li role="presentation" class="">
+                <a href="#wechatpay" role="tab" id="wechatpay-tab" data-toggle="tab" aria-controls="wechatpay" aria-expanded="false"><i class="icon icon-wepay"></i> wechat payment</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+</main>
+
+  <footer class="footer" itemscope itemtype="http://schema.org/WPFooter">
+	
+	
+    <ul class="social-links">
+    	
+        <li><a href="https://github.com/xiaozongyang" target="_blank" title="Github" data-toggle=tooltip data-placement=top><i class="icon icon-github"></i></a></li>
+        
+    </ul>
+
+    <div class="copyright">
+    	
+        <div class="publishby">
+        	Theme by <a href="https://github.com/cofess" target="_blank"> cofess </a>base on <a href="https://github.com/cofess/hexo-theme-pure" target="_blank">pure</a>.
+        </div>
+    </div>
+    
+        <script src='https://unpkg.com/mermaid@7.1.2/dist/mermaid.min.js'></script>
+        <script>
+            if (window.mermaid) {
+              mermaid.initialize({theme: 'forest'});
+            }
+        </script>
+    
+
+</footer>
+
+  <script src="//cdn.jsdelivr.net/npm/jquery@1.12.4/dist/jquery.min.js"></script>
+<script>
+window.jQuery || document.write('<script src="js/jquery.min.js"><\/script>')
+</script>
+
+<script src="/js/plugin.min.js"></script>
+
+
+<script src="/js/application.js"></script>
+
+
+    <script>
+(function (window) {
+    var INSIGHT_CONFIG = {
+        TRANSLATION: {
+            POSTS: 'Posts',
+            PAGES: 'Pages',
+            CATEGORIES: 'Categories',
+            TAGS: 'Tags',
+            UNTITLED: '(Untitled)',
+        },
+        ROOT_URL: '/',
+        CONTENT_URL: '/content.json',
+    };
+    window.INSIGHT_CONFIG = INSIGHT_CONFIG;
+})(window);
+</script>
+
+<script src="/js/insight.js"></script>
+
+
+
+
+
+
+   
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+
+
+
+
+
+   
+    
+  <script src="//cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/valine"></script>
+  <script type="text/javascript">
+  var GUEST = ['nick', 'mail', 'link'];
+  var meta = 'nick,mail,link';
+  meta = meta.split(',').filter(function(item) {
+    return GUEST.indexOf(item) > -1;
+  });
+  new Valine({
+    el: '#vcomments',
+    verify: false,
+    notify: false,
+    appId: 'pqPNKCepVUMmvUn3bs2eFBRQ-gzGzoHsz',
+    appKey: 'CPIqM0YktX8yI835XkAUtTh6',
+    placeholder: 'Just go go',
+    avatar: 'mm',
+    meta: meta,
+    pageSize: '10' || 10,
+    visitor: false
+  });
+  </script>
+
+     
+
+
+
+
+
+
+
+</body>
+</html>

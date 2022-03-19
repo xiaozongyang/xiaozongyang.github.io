@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang=zh>
+<head>
+  <meta charset="utf-8">
+  
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui">
+  <meta name="renderer" content="webkit">
+  <meta http-equiv="Cache-Control" content="no-transform" />
+  <meta http-equiv="Cache-Control" content="no-siteapp" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="format-detection" content="telephone=no,email=no,adress=no">
+  <!-- Color theme for statusbar -->
+  <meta name="theme-color" content="#000000" />
+  <!-- 强制页面在当前窗口以独立页面显示,防止别人在框架里调用页面 -->
+  <meta http-equiv="window-target" content="_top" />
+  
+  
+  <title>第三章 - 分布式系统 | XiaoZongyang&#39;s Blog</title>
+  <meta name="description" content="数据分布：将数据均匀的分不到多个存储节点 1. 副本之间的数据一致性 2. 自动容错，自动检测故障、自动迁移负载     1. **网络永远不可靠** 分布式存储系统中的异常  服务器宕机：节点失去内存信息，原因可能是内存错误、服务器停电等 网络异常 消息丢失 消息乱序（UDP） 网络报数据错误 网络分区：集群节点被划分为多个区域，每个区域内可以正常通信，区域之间无法通信   磁盘故障 磁盘损坏">
+<meta property="og:type" content="article">
+<meta property="og:title" content="第三章 - 分布式系统">
+<meta property="og:url" content="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/index.html">
+<meta property="og:site_name" content="Xiao Zongyang&#39;s Blog">
+<meta property="og:description" content="数据分布：将数据均匀的分不到多个存储节点 1. 副本之间的数据一致性 2. 自动容错，自动检测故障、自动迁移负载     1. **网络永远不可靠** 分布式存储系统中的异常  服务器宕机：节点失去内存信息，原因可能是内存错误、服务器停电等 网络异常 消息丢失 消息乱序（UDP） 网络报数据错误 网络分区：集群节点被划分为多个区域，每个区域内可以正常通信，区域之间无法通信   磁盘故障 磁盘损坏">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/B655C206-512D-4D5A-9156-A5129BC53762.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/F963B98B-F00D-40A9-9D68-DE61866A6869.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/E2586DCD-2B85-4DB8-9419-CB0EA133EBAB.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/49BCC0C1-3782-4EC5-AE76-8210D69F89D1.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/37729371-8F69-413C-A438-2EA14D06FB60.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/C33110ED-8AF1-4D03-A1E4-8288ABE6464A.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/03D3AAC6-92DD-4869-8CE5-BB95B1C872E5.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/8ABCD502-7559-4F07-9990-D37C6E99D004.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/093B36AA-319E-4F7F-B586-59A38CE6E1E9.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/BBE1AEC6-E4A9-47E6-8EA3-AF3E683B5E6D.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/301DC7EE-2E44-4F28-9E75-5266F5FA7221.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/27B6D102-95D9-41AE-9053-93BEFE10BE2A.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/259C9107-66CB-40B9-A721-53705DC59955.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/E6588A57-DDB5-4AFF-9852-F9091C008D95.png">
+<meta property="article:published_time" content="2021-09-27T15:16:15.000Z">
+<meta property="article:modified_time" content="2022-01-04T04:18:52.581Z">
+<meta property="article:author" content="Xiao Zongyang">
+<meta property="article:tag" content="读书笔记">
+<meta property="article:tag" content="存储">
+<meta property="article:tag" content="分布式">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/B655C206-512D-4D5A-9156-A5129BC53762.png">
+  <!-- Canonical links -->
+  <link rel="canonical" href="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/index.html">
+  
+  
+    <link rel="icon" href="/favicon.png" type="image/x-icon">
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+  
+  
+  
+  
+<meta name="generator" content="Hexo 4.2.1"><link rel="alternate" href="/atom.xml" title="Xiao Zongyang's Blog" type="application/atom+xml">
+</head>
+
+
+<body class="main-center" itemscope itemtype="http://schema.org/WebPage">
+  <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+  <div class="slimContent">
+    <div class="navbar-header">
+      
+      
+      <div class="profile-block text-center">
+        <a id="avatar" href="https://github.com/xiaozongyang" target="_blank">
+          <img class="img-circle img-rotate" src="/images/avatar.jpg" width="200" height="200">
+        </a>
+        <h2 id="name" class="hidden-xs hidden-sm">肖宗阳</h2>
+        <h3 id="title" class="hidden-xs hidden-sm hidden-md">Inf Developer</h3>
+        <small id="location" class="text-muted hidden-xs hidden-sm"><i class="icon icon-map-marker"></i> Beijig, China</small>
+      </div>
+      
+      <div class="search" id="search-form-wrap">
+
+    <form class="search-form sidebar-form">
+        <div class="input-group">
+            <input type="text" class="search-form-input form-control" placeholder="Search" />
+            <span class="input-group-btn">
+                <button type="submit" class="search-form-submit btn btn-flat" onclick="return false;"><i class="icon icon-search"></i></button>
+            </span>
+        </div>
+    </form>
+    <div class="ins-search">
+  <div class="ins-search-mask"></div>
+  <div class="ins-search-container">
+    <div class="ins-input-wrapper">
+      <input type="text" class="ins-search-input" placeholder="Type something..." x-webkit-speech />
+      <button type="button" class="close ins-close ins-selectable" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">×</span></button>
+    </div>
+    <div class="ins-section-wrapper">
+      <div class="ins-section-container"></div>
+    </div>
+  </div>
+</div>
+
+
+</div>
+      <button class="navbar-toggle collapsed" type="button" data-toggle="collapse" data-target="#main-navbar" aria-controls="main-navbar" aria-expanded="false">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+    </div>
+    <nav id="main-navbar" class="collapse navbar-collapse" itemscope itemtype="http://schema.org/SiteNavigationElement" role="navigation">
+      <ul class="nav navbar-nav main-nav menu-highlight">
+        
+        
+        <li class="menu-item menu-item-home">
+          <a href="/.">
+            
+            <i class="icon icon-home-fill"></i>
+            
+            <span class="menu-title">Home</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives">
+            
+            <i class="icon icon-archives-fill"></i>
+            
+            <span class="menu-title">Archives</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-repository">
+          <a href="/repository">
+            
+            <i class="icon icon-project"></i>
+            
+            <span class="menu-title">Repository</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about">
+            
+            <i class="icon icon-cup-fill"></i>
+            
+            <span class="menu-title">About</span>
+          </a>
+        </li>
+        
+      </ul>
+      
+	
+    <ul class="social-links">
+    	
+        <li><a href="https://github.com/xiaozongyang" target="_blank" title="Github" data-toggle=tooltip data-placement=top><i class="icon icon-github"></i></a></li>
+        
+    </ul>
+
+    </nav>
+  </div>
+</header>
+
+  
+    <aside class="sidebar" itemscope itemtype="http://schema.org/WPSideBar">
+  <div class="slimContent">
+    
+      <div class="widget">
+    <h3 class="widget-title">Board</h3>
+    <div class="widget-body">
+        <div id="board">
+            <div class="content">
+                <p>欢迎交流与分享经验!</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Categories</h3>
+    <div class="widget-body">
+      <ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/summary/">summary</a><span class="category-list-count">1</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget-body">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/arts/" rel="tag">ARTS</a><span class="tag-list-count">5</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/prometheus/" rel="tag">Prometheus</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/pulsar/" rel="tag">Pulsar</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/rocketmq/" rel="tag">RocketMQ</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/victoriametrics/" rel="tag">VictoriaMetrics</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/apue/" rel="tag">apue</a><span class="tag-list-count">17</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/benchmark/" rel="tag">benchmark</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/java/" rel="tag">java</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/jmh/" rel="tag">jmh</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/kotlin/" rel="tag">kotlin</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/kv/" rel="tag">kv</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/maven/" rel="tag">maven</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/mq/" rel="tag">mq</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/paper/" rel="tag">paper</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/pulsar/" rel="tag">pulsar</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/summary/" rel="tag">summary</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/unix/" rel="tag">unix</a><span class="tag-list-count">17</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F/" rel="tag">分布式</a><span class="tag-list-count">12</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%AD%98%E5%82%A8/" rel="tag">存储</a><span class="tag-list-count">13</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/" rel="tag">文件系统</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB/" rel="tag">源码阅读</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" rel="tag">读书笔记</a><span class="tag-list-count">30</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget-body tagcloud">
+      <a href="/tags/arts/" style="font-size: 13.33px;">ARTS</a> <a href="/tags/prometheus/" style="font-size: 13.17px;">Prometheus</a> <a href="/tags/pulsar/" style="font-size: 13px;">Pulsar</a> <a href="/tags/rocketmq/" style="font-size: 13.17px;">RocketMQ</a> <a href="/tags/victoriametrics/" style="font-size: 13px;">VictoriaMetrics</a> <a href="/tags/apue/" style="font-size: 13.83px;">apue</a> <a href="/tags/benchmark/" style="font-size: 13px;">benchmark</a> <a href="/tags/java/" style="font-size: 13.17px;">java</a> <a href="/tags/jmh/" style="font-size: 13px;">jmh</a> <a href="/tags/kotlin/" style="font-size: 13px;">kotlin</a> <a href="/tags/kv/" style="font-size: 13px;">kv</a> <a href="/tags/maven/" style="font-size: 13px;">maven</a> <a href="/tags/mq/" style="font-size: 13.17px;">mq</a> <a href="/tags/paper/" style="font-size: 13px;">paper</a> <a href="/tags/pulsar/" style="font-size: 13px;">pulsar</a> <a href="/tags/summary/" style="font-size: 13px;">summary</a> <a href="/tags/unix/" style="font-size: 13.83px;">unix</a> <a href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F/" style="font-size: 13.5px;">分布式</a> <a href="/tags/%E5%AD%98%E5%82%A8/" style="font-size: 13.67px;">存储</a> <a href="/tags/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/" style="font-size: 13px;">文件系统</a> <a href="/tags/%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB/" style="font-size: 13px;">源码阅读</a> <a href="/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" style="font-size: 14px;">读书笔记</a>
+    </div>
+  </div>
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Archive</h3>
+    <div class="widget-body">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/02/">二月 2022</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/01/">一月 2022</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/10/">十月 2021</a><span class="archive-list-count">19</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/09/">九月 2021</a><span class="archive-list-count">16</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/04/">四月 2021</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/03/">三月 2021</a><span class="archive-list-count">2</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/07/">七月 2020</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/06/">六月 2020</a><span class="archive-list-count">2</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget-body">
+      <ul class="recent-post-list list-unstyled no-thumbnail">
+        
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/" class="title">Windows Azure Storage: A highly Available Cloud Storage Service with Strong Consistentcy</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2022-02-28T03:24:10.000Z" itemprop="datePublished">2022-02-28</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2022/01/04/Blackbox-Exporter-Url-Probe-%E8%B0%83%E7%A0%94/" class="title">Blackbox-Exporter-Url-Probe-调研</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2022-01-04T04:18:52.527Z" itemprop="datePublished">2022-01-04</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/" class="title">pulsar 延时消息重放时间测试</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T13:00:47.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/distributed-storage-system-view-on-mq/" class="title">从分布式存储系统的角度看 MQ</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T12:50:24.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/17-advanced-ipc/" class="title">第 17 章 - 高级进程间通信</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T10:22:31.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+      </ul>
+    </div>
+  </div>
+  
+
+    
+  </div>
+</aside>
+
+  
+  
+<main class="main" role="main">
+  <div class="content">
+  <article id="post-notes/大规模分布式系统原理解析与架构实战/3-distributed-system" class="article article-type-post" itemscope itemtype="http://schema.org/BlogPosting">
+    
+    <div class="article-header">
+      
+        
+  
+    <h1 class="article-title" itemprop="name">
+      第三章 - 分布式系统
+    </h1>
+  
+
+      
+      <div class="article-meta">
+        <span class="article-date">
+    <i class="icon icon-calendar-check"></i>
+	<a href="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/" class="article-date">
+	  <time datetime="2021-09-27T15:16:15.000Z" itemprop="datePublished">2021-09-27</time>
+	</a>
+</span>
+        
+        
+  <span class="article-tag">
+    <i class="icon icon-tags"></i>
+	<a class="article-tag-link" href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F/" rel="tag">分布式</a>, <a class="article-tag-link" href="/tags/%E5%AD%98%E5%82%A8/" rel="tag">存储</a>, <a class="article-tag-link" href="/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" rel="tag">读书笔记</a>
+  </span>
+
+
+        
+	<span class="article-read hidden-xs">
+	    <i class="icon icon-eye-fill" aria-hidden="true"></i>
+	    <span id="busuanzi_container_page_pv">
+			<span id="busuanzi_value_page_pv">0</span>
+		</span>
+	</span>
+
+
+        <span class="post-comment"><i class="icon icon-comment"></i> <a href="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/#comments" class="article-comment-link">Comments</a></span>
+        
+      </div>
+    </div>
+    <div class="article-entry marked-body" itemprop="articleBody">
+      
+        <ol>
+<li><p>数据分布：将数据均匀的分不到多个存储节点</p>
+<pre><code>1. 副本之间的数据一致性
+2. 自动容错，自动检测故障、自动迁移负载
+    1. **网络永远不可靠**</code></pre></li>
+<li><p>分布式存储系统中的异常</p>
+<ol>
+<li>服务器宕机：节点失去内存信息，原因可能是内存错误、服务器停电等</li>
+<li>网络异常<ol>
+<li>消息丢失</li>
+<li>消息乱序（UDP）</li>
+<li>网络报数据错误</li>
+<li>网络分区：集群节点被划分为多个区域，每个区域内可以正常通信，区域之间无法通信</li>
+</ol>
+</li>
+<li>磁盘故障<ol>
+<li>磁盘损坏：丢失存储在磁盘上的所有数据</li>
+<li>磁盘数据错误：读出来的内容和写进去的不一致（需要 checksum）</li>
+</ol>
+</li>
+</ol>
+</li>
+<li><p>网络异常导致的 RPC 请求结果<strong>三态</strong>：成功、失败、未知</p>
+<ol>
+<li><img src="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/B655C206-512D-4D5A-9156-A5129BC53762.png" class=""></li>
+</ol>
+</li>
+<li><p>数据一致性：用户角度，客户端读写操作是否符合某种特性；存储系统角度哦，存储系统的多个副本之间数据是否一致，更新的顺序是否相同</p>
+<ol>
+<li><ol>
+<li>强一致：如果 Client A 写入一个值，<strong>保证</strong>后续的 Client A, B, C 读取操作<strong>都返回最新值</strong></li>
+</ol>
+</li>
+<li>弱一致：如果 Client A 写入一个值，<strong>不保证</strong>后续的 Client A, B, C 读取操作能够返回最新值</li>
+<li>最终一致：如果 Client A 写入一个值，<strong>在一段时间后</strong>，能保证 Client A, B, C 读取操作能返回最新值</li>
+</ol>
+</li>
+<li><p>分布式存储系统衡量指标</p>
+<ol>
+<li>性能：TPS、RT Average、RT99</li>
+<li>可用性： / 系统正常服务的时间</li>
+<li>一致性</li>
+<li>可扩展性</li>
+</ol>
+</li>
+<li><p>数据分布策略</p>
+<ol>
+<li><p>哈希：根据某个特征计算<strong>哈希值</strong>，并与集群中的服务器建立<strong>映射关系</strong></p>
+<ol>
+<li>很那找到一个散列特性很好的哈希函数，从而会出现数据倾斜问题<ol>
+<li>手动拆分：标记热点，将热点数据分拆到多台服务器</li>
+<li>动态调整：将热点数据拆分到多台服务器</li>
+</ol>
+</li>
+<li>服务器上下线时，<strong>映射关系被打乱，数据需要重新分布</strong>，带来大量的数据迁移<ol>
+<li>哈希值与服务器的对应关系作为<strong>元数据</strong>，交给专门的元数据服务器关系，查询时分两步，第一步计算哈希值，根据哈希值查元数据服务器，第二步从元数据服务器获得具体的服务器地址</li>
+<li>一致性哈希<ol>
+<li><img src="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/F963B98B-F00D-40A9-9D68-DE61866A6869.png" class=""></li>
+<li>哈希环位置信息维护<ol>
+<li>每台服务器<strong>只记录前一个节点和后一个节点</strong>的位置信息，O(1) 空间复杂度，O(N)时间复杂度</li>
+<li>每台服务器维护一个路由表，第 i 元素为编号为 <code>p+2^i-1</code> 的后继节点，O(logN)空间复杂度,O(logN) 时间复杂度</li>
+<li>每台服务器维护<strong>全量</strong>位置信息，O(N)空间复杂度，O(1)时间复杂度</li>
+</ol>
+</li>
+</ol>
+</li>
+</ol>
+</li>
+</ol>
+</li>
+<li><p>顺序分布：将大表熟<strong>顺序</strong>划分为连续的范围，<strong>每个范围称为一个字表</strong></p>
+<ol>
+<li><img src="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/E2586DCD-2B85-4DB8-9419-CB0EA133EBAB.png" class=""></li>
+<li>随之插入和删除，会出现数据分布不均匀，某个子表太大，需要进行分裂，某些子表太小需要合并，从而减少系统中的元数据</li>
+</ol>
+</li>
+</ol>
+</li>
+<li><p>数据副本复制</p>
+<ol>
+<li>主备复制(Primary-based protocol)：客户端写主副本，主副本的变更同步到备副本，一般通过操作日志实现 <img src="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/49BCC0C1-3782-4EC5-AE76-8210D69F89D1.png" class=""></li>
+<li>多写复制（Replicated-write protocol）：如 NWR，写入是写 W 个副本，读取是从 R 个副本中读，要求 <code>W + R &gt; N</code></li>
+</ol>
+</li>
+<li><p>一致性与可用性</p>
+<ol>
+<li>CAP <img src="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/37729371-8F69-413C-A438-2EA14D06FB60.png" class=""></li>
+<li>自动容错导致 P 必须满足，因此 A 和 P 无法同时满足</li>
+</ol>
+</li>
+<li><p>容错</p>
+<ol>
+<li>故障检测：租约（Lease）协议，worker 只在租约内才允许提供服务，租约快到期时需要重新申请租约，<strong>需要注意时钟不一致的问题</strong></li>
+<li>副本打散：避免数据的所有副本分布在同一个机架内</li>
+<li>故障恢复<ol>
+<li>单层结构：系统中对每个数据分片维护多个副本<ol>
+<li>主从切换</li>
+<li>永久故障时，需要<strong>增加副本并同步数据</strong></li>
+</ol>
+</li>
+<li>双层结构：分为存储和服务两层，存储层对数据分配维护多个副本，服务层只有一个服务本提供服务，存储层会将数据持久化写入底层的分布式文件系统，每个数据分片同一时刻只有一个提供服务的节点<ol>
+<li>加载内存状态，如索引 <img src="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/C33110ED-8AF1-4D03-A1E4-8288ABE6464A.png" class=""></li>
+</ol>
+</li>
+</ol>
+</li>
+</ol>
+</li>
+<li><p>总控节点不会成为可扩展性瓶颈</p>
+<ol>
+<li>总控节点职责：维护元数据（如数据分布信息）、worker 管理、数据定位、故障检测和恢复、负责均衡、调度，<strong>总体来说数据量很小</strong></li>
+<li>如果总控节点需要维护文件系统目录树，内存容量可能成为性能瓶颈，解决办法是加一层 Meta Server <img src="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/03D3AAC6-92DD-4869-8CE5-BB95B1C872E5.png" class=""></li>
+<li>如果总控节点只需要维护分片的位置信息，一般不会成为瓶颈</li>
+</ol>
+</li>
+<li><p>数据库拆分</p>
+<ol>
+<li>同构系统：分库分表，<strong>扩容不够灵活、自动化程度低</strong> <img src="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/8ABCD502-7559-4F07-9990-D37C6E99D004.png" class=""></li>
+<li>异构系统：线性可扩、扩缩容成本低<ol>
+<li>数据按分片组织，每个分片可以在集群任意一个节点上</li>
+<li>每个节点上维护一部分分片</li>
+<li>同一个分片的副本分布在多个不同的节点上<img src="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/093B36AA-319E-4F7F-B586-59A38CE6E1E9.png" class=""></li>
+</ol>
+</li>
+</ol>
+</li>
+<li><p>分布式协议</p>
+<ol>
+<li>2PC（Two-phase Commit）保证节点之间的<strong>原子性</strong>，用于实现分布式事务，是<strong>阻塞协议</strong> <img src="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/BBE1AEC6-E4A9-47E6-8EA3-AF3E683B5E6D.png" class="">
+<ul>
+<li>2PC 面临的故障<ol>
+<li>事务参与者发生故障：某个事务参与者一直不响应 → 解决办法，<strong>引入超时时间</strong></li>
+<li>事务协调者发生故障：需要提供备用协调者</li>
+</ol>
+</li>
+</ul>
+</li>
+<li>数据一致性协议 Paxos<ul>
+<li>保证<ol>
+<li><strong>只有一个</strong>节点成为主节点</li>
+<li>最终一定会有一个节点成为主节点，不会没有主节点</li>
+</ol>
+</li>
+<li>执行步骤<ol>
+<li>批准（Accept） Proposer 发送 accpet 消息，要求其他节点（acceptor）接受某个提议值，Acceptor 可以接受或拒绝</li>
+<li>确认(Acknowledge) 如果超过一半的 acceptor 接受，则提议生效，Proposer 发送 acknowledge 消息通知所有的 Acceptor 提议生效<img src="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/301DC7EE-2E44-4F28-9E75-5266F5FA7221.png" class=""></li>
+</ol>
+</li>
+</ul>
+</li>
+</ol>
+</li>
+<li><p>跨机房部署</p>
+<ol>
+<li>集群整体切换（Master 和 Worker 有租约） <img src="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/27B6D102-95D9-41AE-9053-93BEFE10BE2A.png" class=""></li>
+<li>单个集群跨机房（Master 和 Worker 有租约） <img src="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/259C9107-66CB-40B9-A721-53705DC59955.png" class=""></li>
+<li>Paxos 选主副本（<strong>Master 和 Worker 没有租约</strong>）、工程复杂度太高 <img src="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/E6588A57-DDB5-4AFF-9852-F9091C008D95.png" class="">
+</li>
+</ol>
+</li>
+</ol>
+
+      
+    </div>
+    <div class="article-footer">
+      <blockquote class="mt-2x">
+  <ul class="post-copyright list-unstyled">
+    
+    <li class="post-copyright-link hidden-xs">
+      <strong>本文链接：</strong>
+      <a href="http://xiaozongyang.github.io/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/3-distributed-system/" title="第三章 - 分布式系统" target="_blank" rel="external">http://xiaozongyang.github.io/2021/09/27/notes/大规模分布式系统原理解析与架构实战/3-distributed-system/</a>
+    </li>
+    
+    <li class="post-copyright-license">
+      <strong>版权声明： </strong> 本博客所有文章除特别声明外，均采用 <a href="http://creativecommons.org/licenses/by/4.0/deed.zh" target="_blank" rel="external">CC BY 4.0 CN协议</a> 许可协议。转载请注明出处！
+    </li>
+  </ul>
+</blockquote>
+
+
+<div class="panel panel-default panel-badger">
+  <div class="panel-body">
+    <figure class="media">
+      <div class="media-left">
+        <a href="https://github.com/xiaozongyang" target="_blank" class="img-burn thumb-sm visible-lg">
+          <img src="/images/avatar.jpg" class="img-rounded w-full" alt="">
+        </a>
+      </div>
+      <div class="media-body">
+        <h3 class="media-heading"><a href="https://github.com/xiaozongyang" target="_blank"><span class="text-dark">肖宗阳</span><small class="ml-1x">Inf Developer</small></a></h3>
+        <div>基础架构工程师，专注可见性领域。</div>
+      </div>
+    </figure>
+  </div>
+</div>
+
+
+    </div>
+  </article>
+  
+    
+  <section id="comments">
+  	
+      <div id="vcomments"></div>
+    
+  </section>
+
+
+  
+</div>
+
+  <nav class="bar bar-footer clearfix" data-stick-bottom>
+  <div class="bar-inner">
+  
+  <ul class="pager pull-left">
+    
+    <li class="prev">
+      <a href="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/4-distributed-file-system/" title="第四章 - 分布式文件系统"><i class="icon icon-angle-left" aria-hidden="true"></i><span>&nbsp;&nbsp;Newer</span></a>
+    </li>
+    
+    
+    <li class="next">
+      <a href="/2021/09/27/notes/%E5%A4%A7%E8%A7%84%E6%A8%A1%E5%88%86%E5%B8%83%E5%BC%8F%E7%B3%BB%E7%BB%9F%E5%8E%9F%E7%90%86%E8%A7%A3%E6%9E%90%E4%B8%8E%E6%9E%B6%E6%9E%84%E5%AE%9E%E6%88%98/2-single-node-storage-system/" title="第二章 - 单机存储系统"><span>Older&nbsp;&nbsp;</span><i class="icon icon-angle-right" aria-hidden="true"></i></a>
+    </li>
+    
+    
+  </ul>
+  
+  
+  <!-- Button trigger modal -->
+  <button type="button" class="btn btn-fancy btn-donate pop-onhover bg-gradient-warning" data-toggle="modal" data-target="#donateModal"><span>$</span></button>
+  <!-- <div class="wave-icon wave-icon-danger btn-donate" data-toggle="modal" data-target="#donateModal">
+    <div class="wave-circle"><span class="icon"><i class="icon icon-bill"></i></span></div>
+  </div> -->
+  
+  
+  <div class="bar-right">
+    
+    <div class="share-component" data-sites="weibo,qq,wechat,facebook,twitter" data-mobile-sites="weibo,qq,qzone"></div>
+    
+  </div>
+  </div>
+</nav>
+  
+<!-- Modal -->
+<div class="modal modal-center modal-small modal-xs-full fade" id="donateModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content donate">
+      <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+      <div class="modal-body">
+        <div class="donate-box">
+          <div class="donate-head">
+            <p>Maybe you could buy me a cup of coffee.</p>
+          </div>
+          <div class="tab-content">
+            <div role="tabpanel" class="tab-pane fade active in" id="alipay">
+              <div class="donate-payimg">
+                <img src="/images/donate/alipayimg.png" alt="Scan Qrcode" title="Scan" />
+              </div>
+              <p class="text-muted mv">Scan this qrcode</p>
+              <p class="text-grey">Open alipay app scan this qrcode, buy me a coffee!</p>
+            </div>
+            <div role="tabpanel" class="tab-pane fade" id="wechatpay">
+              <div class="donate-payimg">
+                <img src="/images/donate/wechatpayimg.png" alt="Scan Qrcode" title="Scan" />
+              </div>
+              <p class="text-muted mv">Scan this qrcode</p>
+              <p class="text-grey">Open wechat app scan this qrcode, buy me a coffee!</p>
+            </div>
+          </div>
+          <div class="donate-footer">
+            <ul class="nav nav-tabs nav-justified" role="tablist">
+              <li role="presentation" class="active">
+                <a href="#alipay" id="alipay-tab" role="tab" data-toggle="tab" aria-controls="alipay" aria-expanded="true"><i class="icon icon-alipay"></i> alipay</a>
+              </li>
+              <li role="presentation" class="">
+                <a href="#wechatpay" role="tab" id="wechatpay-tab" data-toggle="tab" aria-controls="wechatpay" aria-expanded="false"><i class="icon icon-wepay"></i> wechat payment</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+</main>
+
+  <footer class="footer" itemscope itemtype="http://schema.org/WPFooter">
+	
+	
+    <ul class="social-links">
+    	
+        <li><a href="https://github.com/xiaozongyang" target="_blank" title="Github" data-toggle=tooltip data-placement=top><i class="icon icon-github"></i></a></li>
+        
+    </ul>
+
+    <div class="copyright">
+    	
+        <div class="publishby">
+        	Theme by <a href="https://github.com/cofess" target="_blank"> cofess </a>base on <a href="https://github.com/cofess/hexo-theme-pure" target="_blank">pure</a>.
+        </div>
+    </div>
+    
+        <script src='https://unpkg.com/mermaid@7.1.2/dist/mermaid.min.js'></script>
+        <script>
+            if (window.mermaid) {
+              mermaid.initialize({theme: 'forest'});
+            }
+        </script>
+    
+
+</footer>
+
+  <script src="//cdn.jsdelivr.net/npm/jquery@1.12.4/dist/jquery.min.js"></script>
+<script>
+window.jQuery || document.write('<script src="js/jquery.min.js"><\/script>')
+</script>
+
+<script src="/js/plugin.min.js"></script>
+
+
+<script src="/js/application.js"></script>
+
+
+    <script>
+(function (window) {
+    var INSIGHT_CONFIG = {
+        TRANSLATION: {
+            POSTS: 'Posts',
+            PAGES: 'Pages',
+            CATEGORIES: 'Categories',
+            TAGS: 'Tags',
+            UNTITLED: '(Untitled)',
+        },
+        ROOT_URL: '/',
+        CONTENT_URL: '/content.json',
+    };
+    window.INSIGHT_CONFIG = INSIGHT_CONFIG;
+})(window);
+</script>
+
+<script src="/js/insight.js"></script>
+
+
+
+
+
+
+   
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+
+
+
+
+
+   
+    
+  <script src="//cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/valine"></script>
+  <script type="text/javascript">
+  var GUEST = ['nick', 'mail', 'link'];
+  var meta = 'nick,mail,link';
+  meta = meta.split(',').filter(function(item) {
+    return GUEST.indexOf(item) > -1;
+  });
+  new Valine({
+    el: '#vcomments',
+    verify: false,
+    notify: false,
+    appId: 'pqPNKCepVUMmvUn3bs2eFBRQ-gzGzoHsz',
+    appKey: 'CPIqM0YktX8yI835XkAUtTh6',
+    placeholder: 'Just go go',
+    avatar: 'mm',
+    meta: meta,
+    pageSize: '10' || 10,
+    visitor: false
+  });
+  </script>
+
+     
+
+
+
+
+
+
+
+</body>
+</html>

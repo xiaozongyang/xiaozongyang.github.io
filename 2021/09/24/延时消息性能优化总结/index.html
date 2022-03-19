@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang=zh>
+<head>
+  <meta charset="utf-8">
+  
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui">
+  <meta name="renderer" content="webkit">
+  <meta http-equiv="Cache-Control" content="no-transform" />
+  <meta http-equiv="Cache-Control" content="no-siteapp" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="format-detection" content="telephone=no,email=no,adress=no">
+  <!-- Color theme for statusbar -->
+  <meta name="theme-color" content="#000000" />
+  <!-- 强制页面在当前窗口以独立页面显示,防止别人在框架里调用页面 -->
+  <meta http-equiv="window-target" content="_top" />
+  
+  
+  <title>延时消息性能优化总结 | XiaoZongyang&#39;s Blog</title>
+  <meta name="description" content="Table of Contents  generated with DocToc  背景 存储结构   问题及优化思路 关闭 testOnBorrow 发送流程优化 增加 S1 子任务并发度   读写分离 其他问题   总结和思考 写在最后  本文记录了将公司自建延时消息服务， 单 topic 发送能力 TPS 从 300 优化到 15K TPS 过程中做过的尝试，以及相关的总结和思考。 背景">
+<meta property="og:type" content="article">
+<meta property="og:title" content="延时消息性能优化总结">
+<meta property="og:url" content="http://xiaozongyang.github.io/2021/09/24/%E5%BB%B6%E6%97%B6%E6%B6%88%E6%81%AF%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E6%80%BB%E7%BB%93/index.html">
+<meta property="og:site_name" content="Xiao Zongyang&#39;s Blog">
+<meta property="og:description" content="Table of Contents  generated with DocToc  背景 存储结构   问题及优化思路 关闭 testOnBorrow 发送流程优化 增加 S1 子任务并发度   读写分离 其他问题   总结和思考 写在最后  本文记录了将公司自建延时消息服务， 单 topic 发送能力 TPS 从 300 优化到 15K TPS 过程中做过的尝试，以及相关的总结和思考。 背景">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/09/24/%E5%BB%B6%E6%97%B6%E6%B6%88%E6%81%AF%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E6%80%BB%E7%BB%93/architecture-of-delay-message.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/09/24/%E5%BB%B6%E6%97%B6%E6%B6%88%E6%81%AF%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E6%80%BB%E7%BB%93/borrow_jedis_after_disable_test_on_borrow.png">
+<meta property="article:published_time" content="2021-09-24T08:35:45.000Z">
+<meta property="article:modified_time" content="2022-03-04T08:52:33.820Z">
+<meta property="article:author" content="Xiao Zongyang">
+<meta property="article:tag" content="summary">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://xiaozongyang.github.io/2021/09/24/%E5%BB%B6%E6%97%B6%E6%B6%88%E6%81%AF%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E6%80%BB%E7%BB%93/architecture-of-delay-message.png">
+  <!-- Canonical links -->
+  <link rel="canonical" href="http://xiaozongyang.github.io/2021/09/24/%E5%BB%B6%E6%97%B6%E6%B6%88%E6%81%AF%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E6%80%BB%E7%BB%93/index.html">
+  
+  
+    <link rel="icon" href="/favicon.png" type="image/x-icon">
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+  
+  
+  
+  
+<meta name="generator" content="Hexo 4.2.1"><link rel="alternate" href="/atom.xml" title="Xiao Zongyang's Blog" type="application/atom+xml">
+</head>
+
+
+<body class="main-center" itemscope itemtype="http://schema.org/WebPage">
+  <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+  <div class="slimContent">
+    <div class="navbar-header">
+      
+      
+      <div class="profile-block text-center">
+        <a id="avatar" href="https://github.com/xiaozongyang" target="_blank">
+          <img class="img-circle img-rotate" src="/images/avatar.jpg" width="200" height="200">
+        </a>
+        <h2 id="name" class="hidden-xs hidden-sm">肖宗阳</h2>
+        <h3 id="title" class="hidden-xs hidden-sm hidden-md">Inf Developer</h3>
+        <small id="location" class="text-muted hidden-xs hidden-sm"><i class="icon icon-map-marker"></i> Beijig, China</small>
+      </div>
+      
+      <div class="search" id="search-form-wrap">
+
+    <form class="search-form sidebar-form">
+        <div class="input-group">
+            <input type="text" class="search-form-input form-control" placeholder="Search" />
+            <span class="input-group-btn">
+                <button type="submit" class="search-form-submit btn btn-flat" onclick="return false;"><i class="icon icon-search"></i></button>
+            </span>
+        </div>
+    </form>
+    <div class="ins-search">
+  <div class="ins-search-mask"></div>
+  <div class="ins-search-container">
+    <div class="ins-input-wrapper">
+      <input type="text" class="ins-search-input" placeholder="Type something..." x-webkit-speech />
+      <button type="button" class="close ins-close ins-selectable" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">×</span></button>
+    </div>
+    <div class="ins-section-wrapper">
+      <div class="ins-section-container"></div>
+    </div>
+  </div>
+</div>
+
+
+</div>
+      <button class="navbar-toggle collapsed" type="button" data-toggle="collapse" data-target="#main-navbar" aria-controls="main-navbar" aria-expanded="false">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+    </div>
+    <nav id="main-navbar" class="collapse navbar-collapse" itemscope itemtype="http://schema.org/SiteNavigationElement" role="navigation">
+      <ul class="nav navbar-nav main-nav menu-highlight">
+        
+        
+        <li class="menu-item menu-item-home">
+          <a href="/.">
+            
+            <i class="icon icon-home-fill"></i>
+            
+            <span class="menu-title">Home</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives">
+            
+            <i class="icon icon-archives-fill"></i>
+            
+            <span class="menu-title">Archives</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-repository">
+          <a href="/repository">
+            
+            <i class="icon icon-project"></i>
+            
+            <span class="menu-title">Repository</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about">
+            
+            <i class="icon icon-cup-fill"></i>
+            
+            <span class="menu-title">About</span>
+          </a>
+        </li>
+        
+      </ul>
+      
+	
+    <ul class="social-links">
+    	
+        <li><a href="https://github.com/xiaozongyang" target="_blank" title="Github" data-toggle=tooltip data-placement=top><i class="icon icon-github"></i></a></li>
+        
+    </ul>
+
+    </nav>
+  </div>
+</header>
+
+  
+    <aside class="sidebar" itemscope itemtype="http://schema.org/WPSideBar">
+  <div class="slimContent">
+    
+      <div class="widget">
+    <h3 class="widget-title">Board</h3>
+    <div class="widget-body">
+        <div id="board">
+            <div class="content">
+                <p>欢迎交流与分享经验!</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Categories</h3>
+    <div class="widget-body">
+      <ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/summary/">summary</a><span class="category-list-count">1</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget-body">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/arts/" rel="tag">ARTS</a><span class="tag-list-count">5</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/prometheus/" rel="tag">Prometheus</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/pulsar/" rel="tag">Pulsar</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/rocketmq/" rel="tag">RocketMQ</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/victoriametrics/" rel="tag">VictoriaMetrics</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/apue/" rel="tag">apue</a><span class="tag-list-count">17</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/benchmark/" rel="tag">benchmark</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/java/" rel="tag">java</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/jmh/" rel="tag">jmh</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/kotlin/" rel="tag">kotlin</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/kv/" rel="tag">kv</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/maven/" rel="tag">maven</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/mq/" rel="tag">mq</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/paper/" rel="tag">paper</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/pulsar/" rel="tag">pulsar</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/summary/" rel="tag">summary</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/unix/" rel="tag">unix</a><span class="tag-list-count">17</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F/" rel="tag">分布式</a><span class="tag-list-count">12</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%AD%98%E5%82%A8/" rel="tag">存储</a><span class="tag-list-count">13</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/" rel="tag">文件系统</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB/" rel="tag">源码阅读</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" rel="tag">读书笔记</a><span class="tag-list-count">30</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget-body tagcloud">
+      <a href="/tags/arts/" style="font-size: 13.33px;">ARTS</a> <a href="/tags/prometheus/" style="font-size: 13.17px;">Prometheus</a> <a href="/tags/pulsar/" style="font-size: 13px;">Pulsar</a> <a href="/tags/rocketmq/" style="font-size: 13.17px;">RocketMQ</a> <a href="/tags/victoriametrics/" style="font-size: 13px;">VictoriaMetrics</a> <a href="/tags/apue/" style="font-size: 13.83px;">apue</a> <a href="/tags/benchmark/" style="font-size: 13px;">benchmark</a> <a href="/tags/java/" style="font-size: 13.17px;">java</a> <a href="/tags/jmh/" style="font-size: 13px;">jmh</a> <a href="/tags/kotlin/" style="font-size: 13px;">kotlin</a> <a href="/tags/kv/" style="font-size: 13px;">kv</a> <a href="/tags/maven/" style="font-size: 13px;">maven</a> <a href="/tags/mq/" style="font-size: 13.17px;">mq</a> <a href="/tags/paper/" style="font-size: 13px;">paper</a> <a href="/tags/pulsar/" style="font-size: 13px;">pulsar</a> <a href="/tags/summary/" style="font-size: 13px;">summary</a> <a href="/tags/unix/" style="font-size: 13.83px;">unix</a> <a href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F/" style="font-size: 13.5px;">分布式</a> <a href="/tags/%E5%AD%98%E5%82%A8/" style="font-size: 13.67px;">存储</a> <a href="/tags/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/" style="font-size: 13px;">文件系统</a> <a href="/tags/%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB/" style="font-size: 13px;">源码阅读</a> <a href="/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" style="font-size: 14px;">读书笔记</a>
+    </div>
+  </div>
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Archive</h3>
+    <div class="widget-body">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/02/">二月 2022</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/01/">一月 2022</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/10/">十月 2021</a><span class="archive-list-count">19</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/09/">九月 2021</a><span class="archive-list-count">16</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/04/">四月 2021</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/03/">三月 2021</a><span class="archive-list-count">2</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/07/">七月 2020</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/06/">六月 2020</a><span class="archive-list-count">2</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget-body">
+      <ul class="recent-post-list list-unstyled no-thumbnail">
+        
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/" class="title">Windows Azure Storage: A highly Available Cloud Storage Service with Strong Consistentcy</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2022-02-28T03:24:10.000Z" itemprop="datePublished">2022-02-28</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2022/01/04/Blackbox-Exporter-Url-Probe-%E8%B0%83%E7%A0%94/" class="title">Blackbox-Exporter-Url-Probe-调研</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2022-01-04T04:18:52.527Z" itemprop="datePublished">2022-01-04</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/" class="title">pulsar 延时消息重放时间测试</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T13:00:47.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/distributed-storage-system-view-on-mq/" class="title">从分布式存储系统的角度看 MQ</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T12:50:24.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/17-advanced-ipc/" class="title">第 17 章 - 高级进程间通信</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T10:22:31.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+      </ul>
+    </div>
+  </div>
+  
+
+    
+  </div>
+</aside>
+
+  
+  
+<main class="main" role="main">
+  <div class="content">
+  <article id="post-延时消息性能优化总结" class="article article-type-post" itemscope itemtype="http://schema.org/BlogPosting">
+    
+    <div class="article-header">
+      
+        
+  
+    <h1 class="article-title" itemprop="name">
+      延时消息性能优化总结
+    </h1>
+  
+
+      
+      <div class="article-meta">
+        <span class="article-date">
+    <i class="icon icon-calendar-check"></i>
+	<a href="/2021/09/24/%E5%BB%B6%E6%97%B6%E6%B6%88%E6%81%AF%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E6%80%BB%E7%BB%93/" class="article-date">
+	  <time datetime="2021-09-24T08:35:45.000Z" itemprop="datePublished">2021-09-24</time>
+	</a>
+</span>
+        
+        
+  <span class="article-tag">
+    <i class="icon icon-tags"></i>
+	<a class="article-tag-link" href="/tags/summary/" rel="tag">summary</a>
+  </span>
+
+
+        
+	<span class="article-read hidden-xs">
+	    <i class="icon icon-eye-fill" aria-hidden="true"></i>
+	    <span id="busuanzi_container_page_pv">
+			<span id="busuanzi_value_page_pv">0</span>
+		</span>
+	</span>
+
+
+        <span class="post-comment"><i class="icon icon-comment"></i> <a href="/2021/09/24/%E5%BB%B6%E6%97%B6%E6%B6%88%E6%81%AF%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E6%80%BB%E7%BB%93/#comments" class="article-comment-link">Comments</a></span>
+        
+      </div>
+    </div>
+    <div class="article-entry marked-body" itemprop="articleBody">
+      
+        <!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+<p><strong>Table of Contents</strong>  <em>generated with <a href="https://github.com/thlorenz/doctoc" target="_blank" rel="noopener">DocToc</a></em></p>
+<ul>
+<li><a href="#%E8%83%8C%E6%99%AF">背景</a><ul>
+<li><a href="#%E5%AD%98%E5%82%A8%E7%BB%93%E6%9E%84">存储结构</a></li>
+</ul>
+</li>
+<li><a href="#%E9%97%AE%E9%A2%98%E5%8F%8A%E4%BC%98%E5%8C%96%E6%80%9D%E8%B7%AF">问题及优化思路</a><ul>
+<li><a href="#%E5%85%B3%E9%97%AD-testonborrow">关闭 testOnBorrow</a></li>
+<li><a href="#%E5%8F%91%E9%80%81%E6%B5%81%E7%A8%8B%E4%BC%98%E5%8C%96">发送流程优化</a><ul>
+<li><a href="#%E5%A2%9E%E5%8A%A0-s1-%E5%AD%90%E4%BB%BB%E5%8A%A1%E5%B9%B6%E5%8F%91%E5%BA%A6">增加 S1 子任务并发度</a></li>
+</ul>
+</li>
+<li><a href="#%E8%AF%BB%E5%86%99%E5%88%86%E7%A6%BB">读写分离</a></li>
+<li><a href="#%E5%85%B6%E4%BB%96%E9%97%AE%E9%A2%98">其他问题</a></li>
+</ul>
+</li>
+<li><a href="#%E6%80%BB%E7%BB%93%E5%92%8C%E6%80%9D%E8%80%83">总结和思考</a></li>
+<li><a href="#%E5%86%99%E5%9C%A8%E6%9C%80%E5%90%8E">写在最后</a></li>
+</ul>
+<p>本文记录了将公司自建延时消息服务， 单 topic 发送能力 TPS 从 300 优化到 15K TPS 过程中做过的尝试，以及相关的总结和思考。</p>
+<h2 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h2><p>出于成本和掌控的诉求，公司在今年 Q3 开始计划自建延时消息服务，需要满足如下技术指标：</p>
+<ul>
+<li>单 topic 发送能力 10k TPS</li>
+<li>消息发送时间误差小于 1s</li>
+</ul>
+<p>延时消息服务需要提供发送延时消息、更新延时消息、取消延时消息能力，结合公司现状最终确定的架构方案如下图所示，其中主流程可以分为存储链路和发送链路，链路职责如下：</p>
+<ul>
+<li>存储链路：接受用户请求，将需要发送的延时消息暂存到 redis</li>
+<li>发送链路：定时扫描 redis，将到时间的消息发送出去</li>
+</ul>
+<img src="/2021/09/24/%E5%BB%B6%E6%97%B6%E6%B6%88%E6%81%AF%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E6%80%BB%E7%BB%93/architecture-of-delay-message.png" class="" title="[延时消息方案架构]">
+
+<h3 id="存储结构"><a href="#存储结构" class="headerlink" title="存储结构"></a>存储结构</h3><ul>
+<li>消息索引：我们采用一个 zset 作为消息索引，其中 score 为消息的投递时间戳，value 为消息的 id，消息 id 全局唯一</li>
+<li>完整消息：通过 kv 存储，其中 key 为消息 id，value 为完整消息 JSON 序列化成字符串后，其中消息体需要先进行一次 base64 编码，把 byte[] 变成 String</li>
+</ul>
+<h2 id="问题及优化思路"><a href="#问题及优化思路" class="headerlink" title="问题及优化思路"></a>问题及优化思路</h2><p>从监控大盘上看，第一版代码测试时发现，存储 TPS 能到 6K，但是发送 TPS 只有 300 多，发送链路的内部逻辑如下图</p>
+<pre class="mermaid">graph LR
+s((start)) --> A[根据 topic 和当前时间获取待发送消息的 id]
+A --> B[根据 id 取完整的消息]
+B --> C[发送消息]
+C --> D{发送成功?}
+D --> |y|E[删除 redis 中的消息和索引]
+D --> |n|stop((stop))
+E --> stop</pre>
+
+<h3 id="关闭-testOnBorrow"><a href="#关闭-testOnBorrow" class="headerlink" title="关闭 testOnBorrow"></a>关闭 testOnBorrow</h3><p>看单次访问 redis 的时间在 5ms 左右，而每次从连接池里取连接的耗时也稳定在 3.5ms，到这里有两个可能第一网络很慢,第二redis 服务端处理很慢，从 redis 服务端的监控来看处理很快，基本在微秒级就可以返回，基本可以确认是网络相关的问题。</p>
+<p>再在服务的测试实例上 ping redis server，从 ping 来看大概需要 3.5 ms，和从 jedis 连接池中取连接的耗时基本一致，考虑到连接池应该是在内存中缓存了建立好的连接，不应该每次都需要耗时这么久，怀疑是开了 <code>testOnBorrow</code> 相关的设置，关闭这个设置之后 <code>borrowJedis</code> 的耗时降低到 5us，如下图所示</p>
+<img src="/2021/09/24/%E5%BB%B6%E6%97%B6%E6%B6%88%E6%81%AF%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E6%80%BB%E7%BB%93/borrow_jedis_after_disable_test_on_borrow.png" class="" title="[borrowJedis 关闭 testOnBorrow 前后延时对比]">
+
+<h3 id="发送流程优化"><a href="#发送流程优化" class="headerlink" title="发送流程优化"></a>发送流程优化</h3><p>发送流程上有三个关键的步骤，即取消息 id（记为 S1）、取完整消息（记为 S2）、投递消息到真实的 topic（记为 S3），其中最后一步是直接发送到 RocketMQ broker 逻辑很简单没什么优化空间。所以重点在于如何充分利用机器的 CPU 来增加取消息 id 和取完整消息的并发度，从而提升整个发送流程的吞吐。</p>
+<p>首先，对于串行的 S1、S2、S3 三个步骤，定义出 3 个子任务，每个子任务可以独立并发、不同的子任务之间可以用流水线加速。 例如用 1 个 S1 任务取 10K 消息 id，然后拆分为 100 个  S2 任务并发去消息，每个 S2 任务取完消息再生成一个 S3 任务进行消息投递。</p>
+<h4 id="增加-S1-子任务并发度"><a href="#增加-S1-子任务并发度" class="headerlink" title="增加 S1 子任务并发度"></a>增加 S1 子任务并发度</h4><p>对于 S1 子任务，可以通过先 count 待发送消息数量，然后在内存中分页，根据分页并发取的形式来提升并发度，执行流程如下图</p>
+<pre class="mermaid">graph LR
+start((start)) --> A[ZCOUNT 获取当前需要发送的消息数量 n]
+A --> B[根据固定 pageSize 对 n 进行分页]
+B --> C[每个分页生成一个 S1 子任务]
+C --> D[S1 任务提交到线程池]
+D --> stop((stop))</pre>
+<p>从压测结果来看，如果某一秒需要发送大量消息时，发送 TPS 会上不去，从监控上看 <code>zrangebyscore</code> 的耗时 TP99 达到了 30s，redis server 的 CPU 利用率到了 100%。从 <a href="https://redis.io/commands/zrangebyscore" target="_blank" rel="noopener">redis 的官方文档</a>来看，当 <code>offset</code> 很大时，<code>zrangebyscore</code> 的性能很差，结合 redis 服务端提供的慢查询日志，符合这个说明。因此<strong>这个优化并没能生效</strong>。在延时消息的场景下，<strong>每次取一批消息之后，需要确认消息已经成功发送到 RocketMQ Broker 之后才能删除 Redis 中缓存的消息和索引，否则可能会丢消息</strong>。因此在整个发送流程中，无法直接每次通过 <code>ZREM</code> 取索引的前一批消息 id，避免用 <code>zrangebyscore</code>。<br>出于避免将 redis server CPU 打满的考虑，只能放弃增加 S1 子任务的并发度，改为增大 limit size，一次多取一些消息 id。 #### 增加 S2 S3 子任务并发度<br>S2 和 S3 子任务之间可以互相并发，可以分页打散，原因如下：</p>
+<ul>
+<li>对于 S2 子任务，输入数据为消息 id，不依赖其他状态</li>
+<li>对于 S3 子任务，输入数据为从 redis 中取出来的消息，不依赖其他状态<br>考虑读写 redis 和写 RocketMQ Broker 之间的耗时差异，<strong>对 S2 和 S3 子任务采用不用的 pageSize</strong>，保证不同任务之间耗时基本相同，从而提升线程池的利用率。</li>
+</ul>
+<p>最终的发送流程如下图所示</p>
+<pre class="mermaid">graph TD
+    start((start)) --> A[取 10k 消息 id]
+    A --> B[每 100 个 id 作为一页,分页并发取完整消息]
+    B --> C[每页消息按 50 条一组生成发送任务]
+    C --> D[发送任务提交到线程池]
+    D --> E[发送成功后删除消息]
+    E --> F{判断是否需要取下一批消息}
+    F --> |y|G[更新 offset ]
+    G --> B
+    F --> |n|H{当前时间距离消息投递时间是否已经超过 1s}
+    H --> |y|I[更新取消息时的时间参数]
+    I --> A
+    H --> |n|J{Sleep 到下一秒}
+    J --> A</pre>
+
+<h3 id="读写分离"><a href="#读写分离" class="headerlink" title="读写分离"></a>读写分离</h3><p>在压测过程中发现，单独测试发送和写入时，TPS 表现符合预期，同时测试写入和发送时，系统整体的 TPS 有所下降，各自的线程池都有堆积。因此，出于隔离的考虑，将发送链路和写入链路拆分到不同的进程，拆分之后写入进程无状态。</p>
+<h3 id="其他问题"><a href="#其他问题" class="headerlink" title="其他问题"></a>其他问题</h3><p> 在优化过程中，除了上述的问题，还遇到两个小问题</p>
+<ol>
+<li>考虑使用  redis <code>hash</code> 来存储消息，而不是 string，来提升单个查询请求的性能降低存储空间，从 benchmark 来看从本地 redis 读 100W 消息的吞吐大约有 32% 的提升，考虑到改成 hash 之后会有热点问题，最终将这个尝试废弃</li>
+<li>由于上述的 3 个子任务没有原子性的保证，可能存在有些消息体已经删了，但是 id 还存在的情况，在取消息的时候做了兜底处理</li>
+</ol>
+<h2 id="总结和思考"><a href="#总结和思考" class="headerlink" title="总结和思考"></a>总结和思考</h2><p>结合本次性能优化，得到如下总结和思考</p>
+<ol>
+<li>无法观测就无法优化，因此充分的观测埋点对于性能优化至关重要<ol>
+<li>在压测和优化过程中，主要关注写入、发送的 TPS、线程池的活跃线程数、queue size，归根接地还是 RED 和 USE</li>
+<li>观测工具、大盘需要逐步迭代，一开始只关注最核心的即可，遇到确实的再补</li>
+<li>指标埋点，也能帮忙发现一些异常的逻辑错误，如果出现一些明显反直觉的指标，不妨看看是不是哪些有 bug</li>
+</ol>
+</li>
+<li>理论上有提升的地方，很有可能并不如理论，还需要实验验证</li>
+<li>多读读官方文档，避免踩错误用法踩到坑里，例如 <code>zrangebyscore</code> 给一个很大的 offset</li>
+</ol>
+<h2 id="写在最后"><a href="#写在最后" class="headerlink" title="写在最后"></a>写在最后</h2><p>本文只是作者对优化过程的简单记录和总结，有相关需求和问题的同学欢迎交流讨论。</p>
+
+      
+    </div>
+    <div class="article-footer">
+      <blockquote class="mt-2x">
+  <ul class="post-copyright list-unstyled">
+    
+    <li class="post-copyright-link hidden-xs">
+      <strong>本文链接：</strong>
+      <a href="http://xiaozongyang.github.io/2021/09/24/%E5%BB%B6%E6%97%B6%E6%B6%88%E6%81%AF%E6%80%A7%E8%83%BD%E4%BC%98%E5%8C%96%E6%80%BB%E7%BB%93/" title="延时消息性能优化总结" target="_blank" rel="external">http://xiaozongyang.github.io/2021/09/24/延时消息性能优化总结/</a>
+    </li>
+    
+    <li class="post-copyright-license">
+      <strong>版权声明： </strong> 本博客所有文章除特别声明外，均采用 <a href="http://creativecommons.org/licenses/by/4.0/deed.zh" target="_blank" rel="external">CC BY 4.0 CN协议</a> 许可协议。转载请注明出处！
+    </li>
+  </ul>
+</blockquote>
+
+
+<div class="panel panel-default panel-badger">
+  <div class="panel-body">
+    <figure class="media">
+      <div class="media-left">
+        <a href="https://github.com/xiaozongyang" target="_blank" class="img-burn thumb-sm visible-lg">
+          <img src="/images/avatar.jpg" class="img-rounded w-full" alt="">
+        </a>
+      </div>
+      <div class="media-body">
+        <h3 class="media-heading"><a href="https://github.com/xiaozongyang" target="_blank"><span class="text-dark">肖宗阳</span><small class="ml-1x">Inf Developer</small></a></h3>
+        <div>基础架构工程师，专注可见性领域。</div>
+      </div>
+    </figure>
+  </div>
+</div>
+
+
+    </div>
+  </article>
+  
+    
+  <section id="comments">
+  	
+      <div id="vcomments"></div>
+    
+  </section>
+
+
+  
+</div>
+
+  <nav class="bar bar-footer clearfix" data-stick-bottom>
+  <div class="bar-inner">
+  
+  <ul class="pager pull-left">
+    
+    <li class="prev">
+      <a href="/2021/09/27/find_jobs/" title="找工作相关"><i class="icon icon-angle-left" aria-hidden="true"></i><span>&nbsp;&nbsp;Newer</span></a>
+    </li>
+    
+    
+    <li class="next">
+      <a href="/2021/09/22/rocketmq-%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB-topicconfigmanager/" title="[RocketMQ 源码阅读] TopicConfigManager"><span>Older&nbsp;&nbsp;</span><i class="icon icon-angle-right" aria-hidden="true"></i></a>
+    </li>
+    
+    
+  </ul>
+  
+  
+  <!-- Button trigger modal -->
+  <button type="button" class="btn btn-fancy btn-donate pop-onhover bg-gradient-warning" data-toggle="modal" data-target="#donateModal"><span>$</span></button>
+  <!-- <div class="wave-icon wave-icon-danger btn-donate" data-toggle="modal" data-target="#donateModal">
+    <div class="wave-circle"><span class="icon"><i class="icon icon-bill"></i></span></div>
+  </div> -->
+  
+  
+  <div class="bar-right">
+    
+    <div class="share-component" data-sites="weibo,qq,wechat,facebook,twitter" data-mobile-sites="weibo,qq,qzone"></div>
+    
+  </div>
+  </div>
+</nav>
+  
+<!-- Modal -->
+<div class="modal modal-center modal-small modal-xs-full fade" id="donateModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content donate">
+      <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+      <div class="modal-body">
+        <div class="donate-box">
+          <div class="donate-head">
+            <p>Maybe you could buy me a cup of coffee.</p>
+          </div>
+          <div class="tab-content">
+            <div role="tabpanel" class="tab-pane fade active in" id="alipay">
+              <div class="donate-payimg">
+                <img src="/images/donate/alipayimg.png" alt="Scan Qrcode" title="Scan" />
+              </div>
+              <p class="text-muted mv">Scan this qrcode</p>
+              <p class="text-grey">Open alipay app scan this qrcode, buy me a coffee!</p>
+            </div>
+            <div role="tabpanel" class="tab-pane fade" id="wechatpay">
+              <div class="donate-payimg">
+                <img src="/images/donate/wechatpayimg.png" alt="Scan Qrcode" title="Scan" />
+              </div>
+              <p class="text-muted mv">Scan this qrcode</p>
+              <p class="text-grey">Open wechat app scan this qrcode, buy me a coffee!</p>
+            </div>
+          </div>
+          <div class="donate-footer">
+            <ul class="nav nav-tabs nav-justified" role="tablist">
+              <li role="presentation" class="active">
+                <a href="#alipay" id="alipay-tab" role="tab" data-toggle="tab" aria-controls="alipay" aria-expanded="true"><i class="icon icon-alipay"></i> alipay</a>
+              </li>
+              <li role="presentation" class="">
+                <a href="#wechatpay" role="tab" id="wechatpay-tab" data-toggle="tab" aria-controls="wechatpay" aria-expanded="false"><i class="icon icon-wepay"></i> wechat payment</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+</main>
+
+  <footer class="footer" itemscope itemtype="http://schema.org/WPFooter">
+	
+	
+    <ul class="social-links">
+    	
+        <li><a href="https://github.com/xiaozongyang" target="_blank" title="Github" data-toggle=tooltip data-placement=top><i class="icon icon-github"></i></a></li>
+        
+    </ul>
+
+    <div class="copyright">
+    	
+        <div class="publishby">
+        	Theme by <a href="https://github.com/cofess" target="_blank"> cofess </a>base on <a href="https://github.com/cofess/hexo-theme-pure" target="_blank">pure</a>.
+        </div>
+    </div>
+    
+        <script src='https://unpkg.com/mermaid@7.1.2/dist/mermaid.min.js'></script>
+        <script>
+            if (window.mermaid) {
+              mermaid.initialize({theme: 'forest'});
+            }
+        </script>
+    
+
+</footer>
+
+  <script src="//cdn.jsdelivr.net/npm/jquery@1.12.4/dist/jquery.min.js"></script>
+<script>
+window.jQuery || document.write('<script src="js/jquery.min.js"><\/script>')
+</script>
+
+<script src="/js/plugin.min.js"></script>
+
+
+<script src="/js/application.js"></script>
+
+
+    <script>
+(function (window) {
+    var INSIGHT_CONFIG = {
+        TRANSLATION: {
+            POSTS: 'Posts',
+            PAGES: 'Pages',
+            CATEGORIES: 'Categories',
+            TAGS: 'Tags',
+            UNTITLED: '(Untitled)',
+        },
+        ROOT_URL: '/',
+        CONTENT_URL: '/content.json',
+    };
+    window.INSIGHT_CONFIG = INSIGHT_CONFIG;
+})(window);
+</script>
+
+<script src="/js/insight.js"></script>
+
+
+
+
+
+
+   
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+
+
+
+
+
+   
+    
+  <script src="//cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/valine"></script>
+  <script type="text/javascript">
+  var GUEST = ['nick', 'mail', 'link'];
+  var meta = 'nick,mail,link';
+  meta = meta.split(',').filter(function(item) {
+    return GUEST.indexOf(item) > -1;
+  });
+  new Valine({
+    el: '#vcomments',
+    verify: false,
+    notify: false,
+    appId: 'pqPNKCepVUMmvUn3bs2eFBRQ-gzGzoHsz',
+    appKey: 'CPIqM0YktX8yI835XkAUtTh6',
+    placeholder: 'Just go go',
+    avatar: 'mm',
+    meta: meta,
+    pageSize: '10' || 10,
+    visitor: false
+  });
+  </script>
+
+     
+
+
+
+
+
+
+
+</body>
+</html>

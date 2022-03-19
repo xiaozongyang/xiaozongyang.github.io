@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang=zh>
+<head>
+  <meta charset="utf-8">
+  
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui">
+  <meta name="renderer" content="webkit">
+  <meta http-equiv="Cache-Control" content="no-transform" />
+  <meta http-equiv="Cache-Control" content="no-siteapp" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="format-detection" content="telephone=no,email=no,adress=no">
+  <!-- Color theme for statusbar -->
+  <meta name="theme-color" content="#000000" />
+  <!-- 强制页面在当前窗口以独立页面显示,防止别人在框架里调用页面 -->
+  <meta http-equiv="window-target" content="_top" />
+  
+  
+  <title>第 14 章 - 高级 IO | XiaoZongyang&#39;s Blog</title>
+  <meta name="description" content="非阻塞 IO：调用时不会阻塞调用方，而是立即返回，并将 errno 设置为 EAGIN 将 fd 指定为非阻塞 IO 的方法 使用 O_NONBLOCK 标志打开 通过 fcntl 打开   轮询：多次循环尝试同一个 IO 动作，如果失败不阻塞   记录锁(byte-range locking)：保证一个进程单独写一个文件的部分数据，对文件中的部分区域加锁 int fctnl(int fd, i">
+<meta property="og:type" content="article">
+<meta property="og:title" content="第 14 章 - 高级 IO">
+<meta property="og:url" content="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/index.html">
+<meta property="og:site_name" content="Xiao Zongyang&#39;s Blog">
+<meta property="og:description" content="非阻塞 IO：调用时不会阻塞调用方，而是立即返回，并将 errno 设置为 EAGIN 将 fd 指定为非阻塞 IO 的方法 使用 O_NONBLOCK 标志打开 通过 fcntl 打开   轮询：多次循环尝试同一个 IO 动作，如果失败不阻塞   记录锁(byte-range locking)：保证一个进程单独写一个文件的部分数据，对文件中的部分区域加锁 int fctnl(int fd, i">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/1328CBAC-63D2-4EE2-9C36-AB968C0783A2.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/E38D6CDB-A173-4D6F-8371-6EDC7474C744.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/91248A6F-B85D-4600-A61F-6F591074D87C.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/5F497FD4-41FF-47D6-A2DD-BD8A50426FB4.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/EBDAF9BC-428B-44A2-987C-7F022E539642.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/4219B0DF-E7B2-48EB-872F-970C204DE5B6.png">
+<meta property="article:published_time" content="2021-10-09T10:22:27.000Z">
+<meta property="article:modified_time" content="2022-01-04T04:18:52.505Z">
+<meta property="article:author" content="Xiao Zongyang">
+<meta property="article:tag" content="apue">
+<meta property="article:tag" content="unix">
+<meta property="article:tag" content="读书笔记">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/1328CBAC-63D2-4EE2-9C36-AB968C0783A2.png">
+  <!-- Canonical links -->
+  <link rel="canonical" href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/index.html">
+  
+  
+    <link rel="icon" href="/favicon.png" type="image/x-icon">
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+  
+  
+  
+  
+<meta name="generator" content="Hexo 4.2.1"><link rel="alternate" href="/atom.xml" title="Xiao Zongyang's Blog" type="application/atom+xml">
+</head>
+
+
+<body class="main-center" itemscope itemtype="http://schema.org/WebPage">
+  <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+  <div class="slimContent">
+    <div class="navbar-header">
+      
+      
+      <div class="profile-block text-center">
+        <a id="avatar" href="https://github.com/xiaozongyang" target="_blank">
+          <img class="img-circle img-rotate" src="/images/avatar.jpg" width="200" height="200">
+        </a>
+        <h2 id="name" class="hidden-xs hidden-sm">肖宗阳</h2>
+        <h3 id="title" class="hidden-xs hidden-sm hidden-md">Inf Developer</h3>
+        <small id="location" class="text-muted hidden-xs hidden-sm"><i class="icon icon-map-marker"></i> Beijig, China</small>
+      </div>
+      
+      <div class="search" id="search-form-wrap">
+
+    <form class="search-form sidebar-form">
+        <div class="input-group">
+            <input type="text" class="search-form-input form-control" placeholder="Search" />
+            <span class="input-group-btn">
+                <button type="submit" class="search-form-submit btn btn-flat" onclick="return false;"><i class="icon icon-search"></i></button>
+            </span>
+        </div>
+    </form>
+    <div class="ins-search">
+  <div class="ins-search-mask"></div>
+  <div class="ins-search-container">
+    <div class="ins-input-wrapper">
+      <input type="text" class="ins-search-input" placeholder="Type something..." x-webkit-speech />
+      <button type="button" class="close ins-close ins-selectable" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">×</span></button>
+    </div>
+    <div class="ins-section-wrapper">
+      <div class="ins-section-container"></div>
+    </div>
+  </div>
+</div>
+
+
+</div>
+      <button class="navbar-toggle collapsed" type="button" data-toggle="collapse" data-target="#main-navbar" aria-controls="main-navbar" aria-expanded="false">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+    </div>
+    <nav id="main-navbar" class="collapse navbar-collapse" itemscope itemtype="http://schema.org/SiteNavigationElement" role="navigation">
+      <ul class="nav navbar-nav main-nav menu-highlight">
+        
+        
+        <li class="menu-item menu-item-home">
+          <a href="/.">
+            
+            <i class="icon icon-home-fill"></i>
+            
+            <span class="menu-title">Home</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives">
+            
+            <i class="icon icon-archives-fill"></i>
+            
+            <span class="menu-title">Archives</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-repository">
+          <a href="/repository">
+            
+            <i class="icon icon-project"></i>
+            
+            <span class="menu-title">Repository</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about">
+            
+            <i class="icon icon-cup-fill"></i>
+            
+            <span class="menu-title">About</span>
+          </a>
+        </li>
+        
+      </ul>
+      
+	
+    <ul class="social-links">
+    	
+        <li><a href="https://github.com/xiaozongyang" target="_blank" title="Github" data-toggle=tooltip data-placement=top><i class="icon icon-github"></i></a></li>
+        
+    </ul>
+
+    </nav>
+  </div>
+</header>
+
+  
+    <aside class="sidebar" itemscope itemtype="http://schema.org/WPSideBar">
+  <div class="slimContent">
+    
+      <div class="widget">
+    <h3 class="widget-title">Board</h3>
+    <div class="widget-body">
+        <div id="board">
+            <div class="content">
+                <p>欢迎交流与分享经验!</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Categories</h3>
+    <div class="widget-body">
+      <ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/summary/">summary</a><span class="category-list-count">1</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget-body">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/arts/" rel="tag">ARTS</a><span class="tag-list-count">5</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/prometheus/" rel="tag">Prometheus</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/pulsar/" rel="tag">Pulsar</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/rocketmq/" rel="tag">RocketMQ</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/victoriametrics/" rel="tag">VictoriaMetrics</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/apue/" rel="tag">apue</a><span class="tag-list-count">17</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/benchmark/" rel="tag">benchmark</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/java/" rel="tag">java</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/jmh/" rel="tag">jmh</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/kotlin/" rel="tag">kotlin</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/kv/" rel="tag">kv</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/maven/" rel="tag">maven</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/mq/" rel="tag">mq</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/paper/" rel="tag">paper</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/pulsar/" rel="tag">pulsar</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/summary/" rel="tag">summary</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/unix/" rel="tag">unix</a><span class="tag-list-count">17</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F/" rel="tag">分布式</a><span class="tag-list-count">12</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%AD%98%E5%82%A8/" rel="tag">存储</a><span class="tag-list-count">13</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/" rel="tag">文件系统</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB/" rel="tag">源码阅读</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" rel="tag">读书笔记</a><span class="tag-list-count">30</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget-body tagcloud">
+      <a href="/tags/arts/" style="font-size: 13.33px;">ARTS</a> <a href="/tags/prometheus/" style="font-size: 13.17px;">Prometheus</a> <a href="/tags/pulsar/" style="font-size: 13px;">Pulsar</a> <a href="/tags/rocketmq/" style="font-size: 13.17px;">RocketMQ</a> <a href="/tags/victoriametrics/" style="font-size: 13px;">VictoriaMetrics</a> <a href="/tags/apue/" style="font-size: 13.83px;">apue</a> <a href="/tags/benchmark/" style="font-size: 13px;">benchmark</a> <a href="/tags/java/" style="font-size: 13.17px;">java</a> <a href="/tags/jmh/" style="font-size: 13px;">jmh</a> <a href="/tags/kotlin/" style="font-size: 13px;">kotlin</a> <a href="/tags/kv/" style="font-size: 13px;">kv</a> <a href="/tags/maven/" style="font-size: 13px;">maven</a> <a href="/tags/mq/" style="font-size: 13.17px;">mq</a> <a href="/tags/paper/" style="font-size: 13px;">paper</a> <a href="/tags/pulsar/" style="font-size: 13px;">pulsar</a> <a href="/tags/summary/" style="font-size: 13px;">summary</a> <a href="/tags/unix/" style="font-size: 13.83px;">unix</a> <a href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F/" style="font-size: 13.5px;">分布式</a> <a href="/tags/%E5%AD%98%E5%82%A8/" style="font-size: 13.67px;">存储</a> <a href="/tags/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/" style="font-size: 13px;">文件系统</a> <a href="/tags/%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB/" style="font-size: 13px;">源码阅读</a> <a href="/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" style="font-size: 14px;">读书笔记</a>
+    </div>
+  </div>
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Archive</h3>
+    <div class="widget-body">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/02/">二月 2022</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/01/">一月 2022</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/10/">十月 2021</a><span class="archive-list-count">19</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/09/">九月 2021</a><span class="archive-list-count">16</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/04/">四月 2021</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/03/">三月 2021</a><span class="archive-list-count">2</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/07/">七月 2020</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/06/">六月 2020</a><span class="archive-list-count">2</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget-body">
+      <ul class="recent-post-list list-unstyled no-thumbnail">
+        
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/" class="title">Windows Azure Storage: A highly Available Cloud Storage Service with Strong Consistentcy</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2022-02-28T03:24:10.000Z" itemprop="datePublished">2022-02-28</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2022/01/04/Blackbox-Exporter-Url-Probe-%E8%B0%83%E7%A0%94/" class="title">Blackbox-Exporter-Url-Probe-调研</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2022-01-04T04:18:52.527Z" itemprop="datePublished">2022-01-04</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/" class="title">pulsar 延时消息重放时间测试</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T13:00:47.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/distributed-storage-system-view-on-mq/" class="title">从分布式存储系统的角度看 MQ</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T12:50:24.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/17-advanced-ipc/" class="title">第 17 章 - 高级进程间通信</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T10:22:31.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+      </ul>
+    </div>
+  </div>
+  
+
+    
+  </div>
+</aside>
+
+  
+  
+<main class="main" role="main">
+  <div class="content">
+  <article id="post-Advanced-Programming-in-the-UNIX-Environment/14-advanced-io" class="article article-type-post" itemscope itemtype="http://schema.org/BlogPosting">
+    
+    <div class="article-header">
+      
+        
+  
+    <h1 class="article-title" itemprop="name">
+      第 14 章 - 高级 IO
+    </h1>
+  
+
+      
+      <div class="article-meta">
+        <span class="article-date">
+    <i class="icon icon-calendar-check"></i>
+	<a href="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/" class="article-date">
+	  <time datetime="2021-10-09T10:22:27.000Z" itemprop="datePublished">2021-10-09</time>
+	</a>
+</span>
+        
+        
+  <span class="article-tag">
+    <i class="icon icon-tags"></i>
+	<a class="article-tag-link" href="/tags/apue/" rel="tag">apue</a>, <a class="article-tag-link" href="/tags/unix/" rel="tag">unix</a>, <a class="article-tag-link" href="/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" rel="tag">读书笔记</a>
+  </span>
+
+
+        
+	<span class="article-read hidden-xs">
+	    <i class="icon icon-eye-fill" aria-hidden="true"></i>
+	    <span id="busuanzi_container_page_pv">
+			<span id="busuanzi_value_page_pv">0</span>
+		</span>
+	</span>
+
+
+        <span class="post-comment"><i class="icon icon-comment"></i> <a href="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/#comments" class="article-comment-link">Comments</a></span>
+        
+      </div>
+    </div>
+    <div class="article-entry marked-body" itemprop="articleBody">
+      
+        <ol>
+<li>非阻塞 IO：调用时不会阻塞调用方，而是立即返回，并将 errno 设置为 <code>EAGIN</code><ol>
+<li>将 fd 指定为非阻塞 IO 的方法<ol>
+<li>使用 <code>O_NONBLOCK</code> 标志打开</li>
+<li>通过 <code>fcntl</code> 打开</li>
+</ol>
+</li>
+<li>轮询：多次循环尝试同一个 IO 动作，如果失败不阻塞</li>
+</ol>
+</li>
+<li>记录锁(byte-range locking)：保证一个进程<strong>单独写</strong>一个文件的部分数据，对文件中的部分区域加锁<ol>
+<li><code>int fctnl(int fd, int cmd, ... /* struct flock *flockptr */);</code> <ol>
+<li>cmd 为 <code>F_GETLK</code> / <code>F_SETLK</code> / <code>F_SETLKW</code><ol>
+<li>F_GETLK 判断由 flockptr 描述的锁是否会被另外一把锁排斥，即判断当前锁能不能加上，如果能加上保持 flock 结构不变，否则设置为排斥当前锁的信息</li>
+<li>F_SETLK 设置有 flockptr 描述的锁，如果该出差会立即返回，errno 为 EACCESS 或 EAGAIN</li>
+<li>F_SETLKW  F_SETLK 的阻塞版本，如果加锁失败则调用方被阻塞，如过锁可用，则被唤醒</li>
+</ol>
+</li>
+<li>flock 结构<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">flock</span> &#123;</span></span><br><span class="line">    short l_type; <span class="comment">/* F_RDLCK, F_WRLCK, FUNLCK */</span></span><br><span class="line">    short l_whence; <span class="comment">/* SEEK_SET, SEEK_CUR, SEEK_END */</span></span><br><span class="line">    <span class="keyword">off_t</span> l_start; <span class="comment">/* offset in bytes, relative to l_whence */</span></span><br><span class="line">    <span class="keyword">off_t</span> l_len; <span class="comment">/* length, in bytes; 0 menas lock to EOF */</span></span><br><span class="line">    <span class="keyword">pid_t</span> l_pid; <span class="comment">/* pid of which process acquired the lock, returned with F_GETLK */</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure></li>
+<li>设置或释放文件上的锁时，系统按要求合并或分裂相邻区，如下图 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/1328CBAC-63D2-4EE2-9C36-AB968C0783A2.png" class=""></li>
+<li>锁的隐含继承和释放<ol>
+<li>锁与进程和文件两者相关联<ul>
+<li>进程终止时，它锁简历的锁全部释放</li>
+<li>无论一个 fd 何时关闭，改进程通过这个 fd 引用的文件上的<strong>任何</strong>一把锁都会释放<ul>
+<li>同一个文件打开多次，close 一次锁全部释放</li>
+<li>如果fd1 通过 dup 复制出 fd2，close 任意一个 fd，都会释放文件上的锁</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>子进程<strong>不会继承</strong>父进程的文件锁，只会继承 fd，如果子进程需要加锁，需要另外通过 fcntl 加锁</li>
+<li>执行 exec 后，新程序继承原程序的锁（同一个进程，pid 并没有发生变化） <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/E38D6CDB-A173-4D6F-8371-6EDC7474C744.png" class=""></li>
+</ol>
+</li>
+<li>在文件尾端上加锁时要非常小心，因为大多数实现根据 l_whence 和 l_start 计算出的绝对偏移量，如下图 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/91248A6F-B85D-4600-A61F-6F591074D87C.png" class="">
+ <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/5F497FD4-41FF-47D6-A2DD-BD8A50426FB4.png" class=""></li>
+<li>建议性锁 &amp; 强制性锁<ol>
+<li>建议性锁：使用相同的库函数或者实现方式才生效的加锁实现（例如其他有写权限的进程没用就可以在有锁的时候继续写）</li>
+<li>强制性锁：OS kernel 保证锁实现有效</li>
+</ol>
+</li>
+</ol>
+</li>
+</ol>
+</li>
+</ol>
+<h2 id="IO-多路复用"><a href="#IO-多路复用" class="headerlink" title="IO 多路复用"></a>IO 多路复用</h2><ol>
+<li>动机：一个进程处理多个 fd，轮询感兴趣的 fd</li>
+<li>工作流程<pre class="mermaid">graph LR
+start((start)) --> A[构造感兴趣 fd 列表]
+A --> B[注册 A 中的 fd 列表]
+B --> C[检查任一 fd 就绪]
+C --> D[处理就绪 fd, 进行 IO]
+D --> B</pre></li>
+<li><code>int select(int maxfdp1, fd_set *restrict readfds, fd_set *restrict writefds, fd_set *restrict exceptfds, struct timeval *restrict tvptr)</code> 告诉内核关心哪些 fd 的那些状态（可读、可写、异常），返回已就绪的 fd 总数量、哪些 fd 已就绪<ol>
+<li>参数<ol>
+<li>tvptr 超时时间，分下列几种情况<ol>
+<li><code>tvptr == NULL</code> 永远等待，除非被信号中断</li>
+<li><code>tvptr-&gt;tv_sec == 0 &amp;&amp; tvptr-&gt;tv_usec == 0</code> 不等待，立即返回</li>
+<li><code>tvptr-&gt;tv_sec != 0 || tvptr-&gt;tv_usec != 0</code> 等待指定时长，到时间或有 fd 就绪则返回</li>
+</ol>
+</li>
+<li>readfds/writefds/writefds： fd 集合指针，每个 fd 维护一个 bit</li>
+<li>maxfdp1: <code>max fd + 1</code>，最大的 fd 编号 + 1，最大值通常为 1024</li>
+</ol>
+</li>
+<li>返回值<ol>
+<li><code>-1</code>：出错，例如没有 fd ready 是收到信号</li>
+<li><code>0</code>：没有 fd 就绪</li>
+<li><code>&gt; 0</code>：就绪 fd 数量，如果一个 fd 读写都就绪，则会被计数两次</li>
+</ol>
+</li>
+</ol>
+</li>
+<li><code>int poll(struct pollfd fdarray[], nfds_t nfds, int timeout)</code> 类似 select，用来检查感兴趣的 fd 是否就绪<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">pollfd</span> &#123;</span></span><br><span class="line">    <span class="keyword">int</span> fd; <span class="comment">/* file sescriptor to check, or &lt; 0 to ingore */</span></span><br><span class="line">    short events; <span class="comment">/* events of interest on fd */</span></span><br><span class="line">    short revents; <span class="comment">/* events that occurred on fd */</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure></li>
+<li>select vs poll<ol>
+<li>select fd 数量一般有上限限制，而 poll 没有</li>
+<li>select 会修改传入的 fd_set，而 poll 不会修改 events，因此 select 每次调用前都需要重新设置 fd_set，二 poll 不需要重新设置 events</li>
+<li>select 和 poll 都不受 fd 是否阻塞影响</li>
+<li>select 和 poll 都会被信号中断</li>
+</ol>
+</li>
+</ol>
+<h2 id="异步-IO"><a href="#异步-IO" class="headerlink" title="异步 IO"></a>异步 IO</h2><ol>
+<li>POSIX AIO 的问题<ol>
+<li>每个异步操作有 3 处可能产生错误的地方<ol>
+<li>操作提交</li>
+<li>操作本身的结果</li>
+<li>决定异步操作状态的函数</li>
+</ol>
+</li>
+<li>涉及大量的额外设置和处理规则</li>
+<li>错误恢复很难</li>
+</ol>
+</li>
+<li>AIO 的 io 请求加入操作系统 IO 队列就返回成功，在 IO 操作完成之前需要保证缓冲区稳定</li>
+</ol>
+<h2 id="散布读-scatter-read-amp-聚集写-gather-write"><a href="#散布读-scatter-read-amp-聚集写-gather-write" class="headerlink" title="散布读(scatter read) &amp; 聚集写(gather write)"></a>散布读(scatter read) &amp; 聚集写(gather write)</h2><ol>
+<li><code>readv</code> 从一个 fd 中将数据读到多个 buffer 中，先填满一个 buffer 再填下一个</li>
+<li><code>writev</code> 将多个 buffer 的数据写入到一个 fd 中</li>
+<li>readv/writev 需要指定每个 buffer 的起始地址和长度 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/EBDAF9BC-428B-44A2-987C-7F022E539642.png" class=""></li>
+<li>好处：能够减少系统调用次数</li>
+</ol>
+<h2 id="readn-amp-writen"><a href="#readn-amp-writen" class="headerlink" title="readn &amp; writen"></a>readn &amp; writen</h2><ol>
+<li>背景：管道、FIFO、网络设备有下面两种性质，导致需要多次调用 read/write<ol>
+<li>一次 read 操作返回的数据少于要求的数据</li>
+<li>一次 write 操作的返回值少于指定输出字节数</li>
+</ol>
+</li>
+</ol>
+<h2 id="存储映射-memory-mapped-IO"><a href="#存储映射-memory-mapped-IO" class="headerlink" title="存储映射(memory-mapped) IO"></a>存储映射(memory-mapped) IO</h2><ol>
+<li>Memory-mapped IO：将磁盘文件存储空间的一个缓冲区上，通过读写内存 buffer 的方式读写文件，而不用使用 read/write，映射区域位于堆栈之间</li>
+<li>映射区域保护要求，不能超过文件 open 模式访问权限<ol>
+<li>PROT_READ 可读</li>
+<li>PROT_WRITE 可写</li>
+<li>PROT_EXEC 可执行</li>
+<li>PROY_NONE 不可访问</li>
+</ol>
+</li>
+<li>存储区映射方式<ol>
+<li>MAP_FIXED 返回值必须等于 addr 参数</li>
+<li>MAP_SHARED 指定存储操作修改映射文件，即存储操作相等于对该文件的 write，由内核觉得何时写回脏页</li>
+<li>MAP_PRIVATE 对存储区的操作导致<strong>创建该映射文件的一个副本</strong>，后续的引用都引用该副本</li>
+</ol>
+</li>
+<li>示意图 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/4219B0DF-E7B2-48EB-872F-970C204DE5B6.png" class=""></li>
+<li>mmap 时的 addr 和 offset  需要和虚拟存储页长度对齐（即是page size 的整数倍）<ol>
+<li>如 page size 是 512B，映射 100B 的文件，也会提供 512B 的映射区</li>
+<li>操作映射文件长度之外的内存区域不会反映在文件上，而是需要先增加文件长度</li>
+</ol>
+</li>
+<li>mmap 相关的信号<ol>
+<li><code>SIGSEGV</code> 试图写只读的映射区</li>
+<li><code>SIGBUS</code> 试图访问已截断的映射区</li>
+</ol>
+</li>
+<li>mmap 与子进程<ol>
+<li>fork 出的子进程继承父进程的存储映射区</li>
+<li>exec 切换执行程序后，不继承存储映射区</li>
+</ol>
+</li>
+</ol>
+
+      
+    </div>
+    <div class="article-footer">
+      <blockquote class="mt-2x">
+  <ul class="post-copyright list-unstyled">
+    
+    <li class="post-copyright-link hidden-xs">
+      <strong>本文链接：</strong>
+      <a href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/" title="第 14 章 - 高级 IO" target="_blank" rel="external">http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/</a>
+    </li>
+    
+    <li class="post-copyright-license">
+      <strong>版权声明： </strong> 本博客所有文章除特别声明外，均采用 <a href="http://creativecommons.org/licenses/by/4.0/deed.zh" target="_blank" rel="external">CC BY 4.0 CN协议</a> 许可协议。转载请注明出处！
+    </li>
+  </ul>
+</blockquote>
+
+
+<div class="panel panel-default panel-badger">
+  <div class="panel-body">
+    <figure class="media">
+      <div class="media-left">
+        <a href="https://github.com/xiaozongyang" target="_blank" class="img-burn thumb-sm visible-lg">
+          <img src="/images/avatar.jpg" class="img-rounded w-full" alt="">
+        </a>
+      </div>
+      <div class="media-body">
+        <h3 class="media-heading"><a href="https://github.com/xiaozongyang" target="_blank"><span class="text-dark">肖宗阳</span><small class="ml-1x">Inf Developer</small></a></h3>
+        <div>基础架构工程师，专注可见性领域。</div>
+      </div>
+    </figure>
+  </div>
+</div>
+
+
+    </div>
+  </article>
+  
+    
+  <section id="comments">
+  	
+      <div id="vcomments"></div>
+    
+  </section>
+
+
+  
+</div>
+
+  <nav class="bar bar-footer clearfix" data-stick-bottom>
+  <div class="bar-inner">
+  
+  <ul class="pager pull-left">
+    
+    <li class="prev">
+      <a href="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/15-interprocess-communication/" title="第 15 章 - 进程间通信"><i class="icon icon-angle-left" aria-hidden="true"></i><span>&nbsp;&nbsp;Newer</span></a>
+    </li>
+    
+    
+    <li class="next">
+      <a href="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/13-daemon-processes/" title="13-daemon-processes"><span>Older&nbsp;&nbsp;</span><i class="icon icon-angle-right" aria-hidden="true"></i></a>
+    </li>
+    
+    
+  </ul>
+  
+  
+  <!-- Button trigger modal -->
+  <button type="button" class="btn btn-fancy btn-donate pop-onhover bg-gradient-warning" data-toggle="modal" data-target="#donateModal"><span>$</span></button>
+  <!-- <div class="wave-icon wave-icon-danger btn-donate" data-toggle="modal" data-target="#donateModal">
+    <div class="wave-circle"><span class="icon"><i class="icon icon-bill"></i></span></div>
+  </div> -->
+  
+  
+  <div class="bar-right">
+    
+    <div class="share-component" data-sites="weibo,qq,wechat,facebook,twitter" data-mobile-sites="weibo,qq,qzone"></div>
+    
+  </div>
+  </div>
+</nav>
+  
+<!-- Modal -->
+<div class="modal modal-center modal-small modal-xs-full fade" id="donateModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content donate">
+      <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+      <div class="modal-body">
+        <div class="donate-box">
+          <div class="donate-head">
+            <p>Maybe you could buy me a cup of coffee.</p>
+          </div>
+          <div class="tab-content">
+            <div role="tabpanel" class="tab-pane fade active in" id="alipay">
+              <div class="donate-payimg">
+                <img src="/images/donate/alipayimg.png" alt="Scan Qrcode" title="Scan" />
+              </div>
+              <p class="text-muted mv">Scan this qrcode</p>
+              <p class="text-grey">Open alipay app scan this qrcode, buy me a coffee!</p>
+            </div>
+            <div role="tabpanel" class="tab-pane fade" id="wechatpay">
+              <div class="donate-payimg">
+                <img src="/images/donate/wechatpayimg.png" alt="Scan Qrcode" title="Scan" />
+              </div>
+              <p class="text-muted mv">Scan this qrcode</p>
+              <p class="text-grey">Open wechat app scan this qrcode, buy me a coffee!</p>
+            </div>
+          </div>
+          <div class="donate-footer">
+            <ul class="nav nav-tabs nav-justified" role="tablist">
+              <li role="presentation" class="active">
+                <a href="#alipay" id="alipay-tab" role="tab" data-toggle="tab" aria-controls="alipay" aria-expanded="true"><i class="icon icon-alipay"></i> alipay</a>
+              </li>
+              <li role="presentation" class="">
+                <a href="#wechatpay" role="tab" id="wechatpay-tab" data-toggle="tab" aria-controls="wechatpay" aria-expanded="false"><i class="icon icon-wepay"></i> wechat payment</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+</main>
+
+  <footer class="footer" itemscope itemtype="http://schema.org/WPFooter">
+	
+	
+    <ul class="social-links">
+    	
+        <li><a href="https://github.com/xiaozongyang" target="_blank" title="Github" data-toggle=tooltip data-placement=top><i class="icon icon-github"></i></a></li>
+        
+    </ul>
+
+    <div class="copyright">
+    	
+        <div class="publishby">
+        	Theme by <a href="https://github.com/cofess" target="_blank"> cofess </a>base on <a href="https://github.com/cofess/hexo-theme-pure" target="_blank">pure</a>.
+        </div>
+    </div>
+    
+        <script src='https://unpkg.com/mermaid@7.1.2/dist/mermaid.min.js'></script>
+        <script>
+            if (window.mermaid) {
+              mermaid.initialize({theme: 'forest'});
+            }
+        </script>
+    
+
+</footer>
+
+  <script src="//cdn.jsdelivr.net/npm/jquery@1.12.4/dist/jquery.min.js"></script>
+<script>
+window.jQuery || document.write('<script src="js/jquery.min.js"><\/script>')
+</script>
+
+<script src="/js/plugin.min.js"></script>
+
+
+<script src="/js/application.js"></script>
+
+
+    <script>
+(function (window) {
+    var INSIGHT_CONFIG = {
+        TRANSLATION: {
+            POSTS: 'Posts',
+            PAGES: 'Pages',
+            CATEGORIES: 'Categories',
+            TAGS: 'Tags',
+            UNTITLED: '(Untitled)',
+        },
+        ROOT_URL: '/',
+        CONTENT_URL: '/content.json',
+    };
+    window.INSIGHT_CONFIG = INSIGHT_CONFIG;
+})(window);
+</script>
+
+<script src="/js/insight.js"></script>
+
+
+
+
+
+
+   
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+
+
+
+
+
+   
+    
+  <script src="//cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/valine"></script>
+  <script type="text/javascript">
+  var GUEST = ['nick', 'mail', 'link'];
+  var meta = 'nick,mail,link';
+  meta = meta.split(',').filter(function(item) {
+    return GUEST.indexOf(item) > -1;
+  });
+  new Valine({
+    el: '#vcomments',
+    verify: false,
+    notify: false,
+    appId: 'pqPNKCepVUMmvUn3bs2eFBRQ-gzGzoHsz',
+    appKey: 'CPIqM0YktX8yI835XkAUtTh6',
+    placeholder: 'Just go go',
+    avatar: 'mm',
+    meta: meta,
+    pageSize: '10' || 10,
+    visitor: false
+  });
+  </script>
+
+     
+
+
+
+
+
+
+
+</body>
+</html>

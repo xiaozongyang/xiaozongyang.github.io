@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html lang=zh>
+<head>
+  <meta charset="utf-8">
+  
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui">
+  <meta name="renderer" content="webkit">
+  <meta http-equiv="Cache-Control" content="no-transform" />
+  <meta http-equiv="Cache-Control" content="no-siteapp" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="format-detection" content="telephone=no,email=no,adress=no">
+  <!-- Color theme for statusbar -->
+  <meta name="theme-color" content="#000000" />
+  <!-- 强制页面在当前窗口以独立页面显示,防止别人在框架里调用页面 -->
+  <meta http-equiv="window-target" content="_top" />
+  
+  
+  <title>第 4 章 - 文件和目录 | XiaoZongyang&#39;s Blog</title>
+  <meta name="description" content="stat, fstat, fstatat, lstat int stat(const char *restrict pathname, struct stat *restrict buf) 返回 pathname 指定的文件的信息结构 int fstat(int fd, struct stat *buf) 通过 fd 获取文件的结构信息 lstat 与 stat 类似，但是返回的是符号链接的信息">
+<meta property="og:type" content="article">
+<meta property="og:title" content="第 4 章 - 文件和目录">
+<meta property="og:url" content="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/4-files-and-directories/index.html">
+<meta property="og:site_name" content="Xiao Zongyang&#39;s Blog">
+<meta property="og:description" content="stat, fstat, fstatat, lstat int stat(const char *restrict pathname, struct stat *restrict buf) 返回 pathname 指定的文件的信息结构 int fstat(int fd, struct stat *buf) 通过 fd 获取文件的结构信息 lstat 与 stat 类似，但是返回的是符号链接的信息">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/4-files-and-directories/A8A5CD64-5368-42EF-8C98-7636319E0E36.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/4-files-and-directories/1647FEC4-90B5-4315-B5A4-BD0C576619F4.png">
+<meta property="article:published_time" content="2021-10-09T10:22:13.000Z">
+<meta property="article:modified_time" content="2022-01-04T04:18:52.518Z">
+<meta property="article:author" content="Xiao Zongyang">
+<meta property="article:tag" content="apue">
+<meta property="article:tag" content="unix">
+<meta property="article:tag" content="读书笔记">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/4-files-and-directories/A8A5CD64-5368-42EF-8C98-7636319E0E36.png">
+  <!-- Canonical links -->
+  <link rel="canonical" href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/4-files-and-directories/index.html">
+  
+  
+    <link rel="icon" href="/favicon.png" type="image/x-icon">
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+  
+  
+  
+  
+<meta name="generator" content="Hexo 4.2.1"><link rel="alternate" href="/atom.xml" title="Xiao Zongyang's Blog" type="application/atom+xml">
+</head>
+
+
+<body class="main-center" itemscope itemtype="http://schema.org/WebPage">
+  <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+  <div class="slimContent">
+    <div class="navbar-header">
+      
+      
+      <div class="profile-block text-center">
+        <a id="avatar" href="https://github.com/xiaozongyang" target="_blank">
+          <img class="img-circle img-rotate" src="/images/avatar.jpg" width="200" height="200">
+        </a>
+        <h2 id="name" class="hidden-xs hidden-sm">肖宗阳</h2>
+        <h3 id="title" class="hidden-xs hidden-sm hidden-md">Inf Developer</h3>
+        <small id="location" class="text-muted hidden-xs hidden-sm"><i class="icon icon-map-marker"></i> Beijig, China</small>
+      </div>
+      
+      <div class="search" id="search-form-wrap">
+
+    <form class="search-form sidebar-form">
+        <div class="input-group">
+            <input type="text" class="search-form-input form-control" placeholder="Search" />
+            <span class="input-group-btn">
+                <button type="submit" class="search-form-submit btn btn-flat" onclick="return false;"><i class="icon icon-search"></i></button>
+            </span>
+        </div>
+    </form>
+    <div class="ins-search">
+  <div class="ins-search-mask"></div>
+  <div class="ins-search-container">
+    <div class="ins-input-wrapper">
+      <input type="text" class="ins-search-input" placeholder="Type something..." x-webkit-speech />
+      <button type="button" class="close ins-close ins-selectable" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">×</span></button>
+    </div>
+    <div class="ins-section-wrapper">
+      <div class="ins-section-container"></div>
+    </div>
+  </div>
+</div>
+
+
+</div>
+      <button class="navbar-toggle collapsed" type="button" data-toggle="collapse" data-target="#main-navbar" aria-controls="main-navbar" aria-expanded="false">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+    </div>
+    <nav id="main-navbar" class="collapse navbar-collapse" itemscope itemtype="http://schema.org/SiteNavigationElement" role="navigation">
+      <ul class="nav navbar-nav main-nav menu-highlight">
+        
+        
+        <li class="menu-item menu-item-home">
+          <a href="/.">
+            
+            <i class="icon icon-home-fill"></i>
+            
+            <span class="menu-title">Home</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives">
+            
+            <i class="icon icon-archives-fill"></i>
+            
+            <span class="menu-title">Archives</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-repository">
+          <a href="/repository">
+            
+            <i class="icon icon-project"></i>
+            
+            <span class="menu-title">Repository</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about">
+            
+            <i class="icon icon-cup-fill"></i>
+            
+            <span class="menu-title">About</span>
+          </a>
+        </li>
+        
+      </ul>
+      
+	
+    <ul class="social-links">
+    	
+        <li><a href="https://github.com/xiaozongyang" target="_blank" title="Github" data-toggle=tooltip data-placement=top><i class="icon icon-github"></i></a></li>
+        
+    </ul>
+
+    </nav>
+  </div>
+</header>
+
+  
+    <aside class="sidebar" itemscope itemtype="http://schema.org/WPSideBar">
+  <div class="slimContent">
+    
+      <div class="widget">
+    <h3 class="widget-title">Board</h3>
+    <div class="widget-body">
+        <div id="board">
+            <div class="content">
+                <p>欢迎交流与分享经验!</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Categories</h3>
+    <div class="widget-body">
+      <ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/summary/">summary</a><span class="category-list-count">1</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget-body">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/arts/" rel="tag">ARTS</a><span class="tag-list-count">5</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/prometheus/" rel="tag">Prometheus</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/pulsar/" rel="tag">Pulsar</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/rocketmq/" rel="tag">RocketMQ</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/victoriametrics/" rel="tag">VictoriaMetrics</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/apue/" rel="tag">apue</a><span class="tag-list-count">17</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/benchmark/" rel="tag">benchmark</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/java/" rel="tag">java</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/jmh/" rel="tag">jmh</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/kotlin/" rel="tag">kotlin</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/kv/" rel="tag">kv</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/maven/" rel="tag">maven</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/mq/" rel="tag">mq</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/paper/" rel="tag">paper</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/pulsar/" rel="tag">pulsar</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/summary/" rel="tag">summary</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/unix/" rel="tag">unix</a><span class="tag-list-count">17</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F/" rel="tag">分布式</a><span class="tag-list-count">12</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%AD%98%E5%82%A8/" rel="tag">存储</a><span class="tag-list-count">13</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/" rel="tag">文件系统</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB/" rel="tag">源码阅读</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" rel="tag">读书笔记</a><span class="tag-list-count">30</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget-body tagcloud">
+      <a href="/tags/arts/" style="font-size: 13.33px;">ARTS</a> <a href="/tags/prometheus/" style="font-size: 13.17px;">Prometheus</a> <a href="/tags/pulsar/" style="font-size: 13px;">Pulsar</a> <a href="/tags/rocketmq/" style="font-size: 13.17px;">RocketMQ</a> <a href="/tags/victoriametrics/" style="font-size: 13px;">VictoriaMetrics</a> <a href="/tags/apue/" style="font-size: 13.83px;">apue</a> <a href="/tags/benchmark/" style="font-size: 13px;">benchmark</a> <a href="/tags/java/" style="font-size: 13.17px;">java</a> <a href="/tags/jmh/" style="font-size: 13px;">jmh</a> <a href="/tags/kotlin/" style="font-size: 13px;">kotlin</a> <a href="/tags/kv/" style="font-size: 13px;">kv</a> <a href="/tags/maven/" style="font-size: 13px;">maven</a> <a href="/tags/mq/" style="font-size: 13.17px;">mq</a> <a href="/tags/paper/" style="font-size: 13px;">paper</a> <a href="/tags/pulsar/" style="font-size: 13px;">pulsar</a> <a href="/tags/summary/" style="font-size: 13px;">summary</a> <a href="/tags/unix/" style="font-size: 13.83px;">unix</a> <a href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F/" style="font-size: 13.5px;">分布式</a> <a href="/tags/%E5%AD%98%E5%82%A8/" style="font-size: 13.67px;">存储</a> <a href="/tags/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/" style="font-size: 13px;">文件系统</a> <a href="/tags/%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB/" style="font-size: 13px;">源码阅读</a> <a href="/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" style="font-size: 14px;">读书笔记</a>
+    </div>
+  </div>
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Archive</h3>
+    <div class="widget-body">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/02/">二月 2022</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/01/">一月 2022</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/10/">十月 2021</a><span class="archive-list-count">19</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/09/">九月 2021</a><span class="archive-list-count">16</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/04/">四月 2021</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/03/">三月 2021</a><span class="archive-list-count">2</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/07/">七月 2020</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/06/">六月 2020</a><span class="archive-list-count">2</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget-body">
+      <ul class="recent-post-list list-unstyled no-thumbnail">
+        
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/" class="title">Windows Azure Storage: A highly Available Cloud Storage Service with Strong Consistentcy</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2022-02-28T03:24:10.000Z" itemprop="datePublished">2022-02-28</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2022/01/04/Blackbox-Exporter-Url-Probe-%E8%B0%83%E7%A0%94/" class="title">Blackbox-Exporter-Url-Probe-调研</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2022-01-04T04:18:52.527Z" itemprop="datePublished">2022-01-04</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/" class="title">pulsar 延时消息重放时间测试</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T13:00:47.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/distributed-storage-system-view-on-mq/" class="title">从分布式存储系统的角度看 MQ</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T12:50:24.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/17-advanced-ipc/" class="title">第 17 章 - 高级进程间通信</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T10:22:31.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+      </ul>
+    </div>
+  </div>
+  
+
+    
+  </div>
+</aside>
+
+  
+  
+<main class="main" role="main">
+  <div class="content">
+  <article id="post-Advanced-Programming-in-the-UNIX-Environment/4-files-and-directories" class="article article-type-post" itemscope itemtype="http://schema.org/BlogPosting">
+    
+    <div class="article-header">
+      
+        
+  
+    <h1 class="article-title" itemprop="name">
+      第 4 章 - 文件和目录
+    </h1>
+  
+
+      
+      <div class="article-meta">
+        <span class="article-date">
+    <i class="icon icon-calendar-check"></i>
+	<a href="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/4-files-and-directories/" class="article-date">
+	  <time datetime="2021-10-09T10:22:13.000Z" itemprop="datePublished">2021-10-09</time>
+	</a>
+</span>
+        
+        
+  <span class="article-tag">
+    <i class="icon icon-tags"></i>
+	<a class="article-tag-link" href="/tags/apue/" rel="tag">apue</a>, <a class="article-tag-link" href="/tags/unix/" rel="tag">unix</a>, <a class="article-tag-link" href="/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" rel="tag">读书笔记</a>
+  </span>
+
+
+        
+	<span class="article-read hidden-xs">
+	    <i class="icon icon-eye-fill" aria-hidden="true"></i>
+	    <span id="busuanzi_container_page_pv">
+			<span id="busuanzi_value_page_pv">0</span>
+		</span>
+	</span>
+
+
+        <span class="post-comment"><i class="icon icon-comment"></i> <a href="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/4-files-and-directories/#comments" class="article-comment-link">Comments</a></span>
+        
+      </div>
+    </div>
+    <div class="article-entry marked-body" itemprop="articleBody">
+      
+        <h2 id="stat-fstat-fstatat-lstat"><a href="#stat-fstat-fstatat-lstat" class="headerlink" title="stat, fstat, fstatat, lstat"></a>stat, fstat, fstatat, lstat</h2><ol>
+<li><code>int stat(const char *restrict pathname, struct stat *restrict buf)</code> 返回 pathname 指定的文件的信息结构</li>
+<li><code>int fstat(int fd, struct stat *buf)</code> 通过 fd 获取文件的结构信息</li>
+<li><code>lstat</code> 与 <code>stat</code> 类似，但是返回的是<strong>符号链接</strong>的信息</li>
+<li><code>strcut stat</code> 的基本结构<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">stat</span> &#123;</span></span><br><span class="line">    <span class="keyword">mode_t</span> st_mode; <span class="comment">/* file type &amp; mode (permissions) */</span></span><br><span class="line">    <span class="keyword">inot_t</span> st_ino; <span class="comment">/* i-node number (serial number) */</span></span><br><span class="line">    <span class="keyword">dev_t</span> st_dev; <span class="comment">/* device number (file system) */</span></span><br><span class="line">    <span class="keyword">dev_t</span> st_rdev; <span class="comment">/* device nuber for sepecial files */</span></span><br><span class="line">    <span class="keyword">nlink_t</span> st_nlink; <span class="comment">/* number of links */</span></span><br><span class="line">    <span class="keyword">uid_t</span> st_uid; <span class="comment">/* user ID of owner */</span></span><br><span class="line">    <span class="keyword">gid_t</span> st_gid; <span class="comment">/* group ID of owner */</span></span><br><span class="line">    <span class="keyword">off_t</span> st_size; <span class="comment">/* size in bytes, for regular files */</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">timespec</span> <span class="title">st_atime</span>;</span> <span class="comment">/* time of last access */</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">timesepc</span> <span class="title">st_mtime</span>;</span> <span class="comment">/* time of last modification */</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">timespec</span> <span class="title">st_ctime</span>;</span> <span class="comment">/* time of last file status change */</span></span><br><span class="line">    <span class="keyword">blksize_t</span> st_blksize; <span class="comment">/* best I/O block size*/</span></span><br><span class="line">    <span class="keyword">blkcnt_t</span> st_blocks; <span class="comment">/* number of disk blocks allocated */</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+</li>
+</ol>
+<h2 id="文件类型"><a href="#文件类型" class="headerlink" title="文件类型"></a>文件类型</h2><ol>
+<li>普通文件：包含某种形式的数据，内核必须理解可执行文件的格式</li>
+<li>目录文件：包含了其他文件的<strong>名字</strong>，以及指向这些文件信息的<strong>指针</strong>，<strong>任何进程都可以读</strong>目录的内容，<strong>只有内核可以直接写目录文件</strong></li>
+<li>块特殊文件：提供对设备（如磁盘）<strong>带缓冲</strong>的访问，每次访问以固定长度为单位进行</li>
+<li>字符特殊文件：提供对设备<strong>不带缓冲</strong>的访问，每次访问长度可变（如键盘）。</li>
+<li>FIFO：用于进程间通信，也称为命名管道（named pipe）</li>
+<li>socket：用于进程间的<strong>网络通信</strong>，也可以用作一台宿主机之间的非网络通信</li>
+<li>符号链接(symbol link)：指向另一个文件，通过</li>
+</ol>
+<h2 id="文件和进程的-uid-gid"><a href="#文件和进程的-uid-gid" class="headerlink" title="文件和进程的 uid/gid"></a>文件和进程的 uid/gid</h2><ol>
+<li>设置用户 ID &amp; 实际用户 ID &amp; 保存的设置用户 ID<ol>
+<li>实际用户 ID：标识我们是谁，登录时确定</li>
+<li>有效用户 ID：决定了我们的访问权限</li>
+<li>保存的设置用户 ID：有效用户 ID 和实际用户 ID 的副本</li>
+<li>可以通过 st_mode 的标志位设置一个特殊标志，当执行改文件时，将进程的有效用户 ID 设置为文件所有者的用户 ID（例如访问 <code>/etc/passwd</code>，会获得 root 权限）<h2 id="文件访问权限："><a href="#文件访问权限：" class="headerlink" title="文件访问权限："></a>文件访问权限：</h2>RWX（read/write/execute）, user/group/other</li>
+<li>通过名字打开任一类型的文件时，必须对该名字中包含的目录或隐含的当前工作目录具有执行权限(X)</li>
+<li>对于一个文件是否有读/写权限，决定了是否能打开一个文件进行读操作，与 O_RDONLY/O_WRONLY 和 O_RDWR 标志相关</li>
+<li>open 文件时如果要设置 O_TRUNC，必须要有写权限</li>
+<li>删除文件时，必须有写和执行权限</li>
+<li>被 exec 函数执行的文件，必须是普通文件，并有执行权限</li>
+<li>进程每次打开、创建、删除文件时，内核进行权限测试，对文件的 uid &amp; gid，进程的有效 uid &amp; gid，进程的附属组 ID 进行测试<ol>
+<li>uid=0 的超级用户可以直接访问</li>
+<li>如果进程有效 uid = 文件所属的 uid 且有适当权限则允许访问</li>
+<li>如果进程的有效 gid = 文件所属的 gid 或进程的附属组 id = 文件 gid，且拥有释放权限则允许访问</li>
+<li>如果文件的<strong>其他用户</strong>有适当权限，则允许访问</li>
+<li>其他情况拒绝访问</li>
+</ol>
+</li>
+</ol>
+</li>
+<li>新目录/文件的所有权：使用 <code>open</code>/<code>creat</code> 创建新文件时，新文件的用户 id 为进程的有效用户 id，组 id 为进程的有效组 id 或所在目录的组 id</li>
+</ol>
+<h2 id="其他函数"><a href="#其他函数" class="headerlink" title="其他函数"></a>其他函数</h2><ol>
+<li>access &amp; faccessat<ol>
+<li>功能：用于测试当前进程对某个文件是否有对应权限，成功返回 0，出错范围-1</li>
+<li>区别<ol>
+<li>access 参数为 pathname</li>
+<li>faccessat 参数为 fd 和 pathname</li>
+</ol>
+</li>
+</ol>
+</li>
+<li>umask 设置文件模式创建屏蔽字，并返回之前的值，即<strong>屏蔽字中为 1 的位，关闭对应的权限</strong></li>
+<li>chmod &amp; fchmod &amp; fchmodat 修改现有文件的访问权限</li>
+<li>chown &amp; fchown &amp; fchownat &amp; lchown 修改现有文件或符号链接的 owner</li>
+<li><code>int truncate(const char *pathname, off_t length)</code> 截断文件<ol>
+<li>如果文件当前长度大于 length，则 length 之后的数据不能再访问</li>
+<li>如果文件当前<strong>长度小于 length，则文件长度将增到到 length</strong>，增加部分为<strong>空洞</strong>（读 0）</li>
+</ol>
+</li>
+<li><code>link</code> 创建指向给定 inode 的目录项，增加该 inode 的链接计数，<code>unlink</code> 删除目录项，即减少 path 对于对应 inode 的链接计数<ol>
+<li>一个文件的链接计数为 0，并且打开它的进程数也为 0 时，才会被删除</li>
+<li>文件 <em>unlink</em> 后，会删除对应名称的目录项，没法通过 <code>ls -l</code> 在文件系统中看到</li>
+<li>一个进程可以用 <em>unlink</em> 它创建的临时文件，保证进程崩溃后临时文件也被删除</li>
+</ol>
+</li>
+<li><code>remove</code> 解除对文件或目录的链接，类似 <code>unlink</code></li>
+<li><code>rename(const char *oldname, const chat *newname)</code> 对文件或目录进行重命名<ol>
+<li>如果 oldname 是文件，为该文件或目录重命名，<strong>要求如果 newname 若已存在不能是目录</strong>，会删除 newname 的目录项，然后将 oldname 修改为 newname</li>
+<li>如果 oldname 是目录，<strong>要求如果 newname 存在，则 newnmae 必须是空目录（只含 <code>.</code>, <code>..</code>）</strong></li>
+<li>如果 oldname 或 newname 引用符号链接，则处理的是符号链接本身，而不是所引用的文件</li>
+<li>不能对 <code>.</code> 和 <code>..</code> 重命名，即 <code>.</code> 和 <code>..</code> 不能出现在路径最后</li>
+<li>如果 oldname 和 newname 相同，则不进行任何修改</li>
+</ol>
+</li>
+<li><code>symlink</code> 创建符号链接，<code>readlink</code> 读取符号链接</li>
+<li><code>futimens</code>/<code>utimensat</code> 更新文件数据的访问和修改时间</li>
+<li><code>mkdir</code>/<code>mkdirat</code> 创建新的空目录</li>
+<li><code>rmdir</code> 删除空目录，如果该目录没有进程打开，则直接释放该目录占用的空间；如果该目录被进程打开，则删除 <code>.</code> 和 <code>..</code>后返回，无法在该目录下不能创建新文件，进程关闭它之间不释放磁盘空间</li>
+<li><code>chdir</code> 修改当前进程的工作目录（搜索相对路径的起点），不影响其他进程</li>
+<li><code>getcwd</code> 获取当前进程的工作目录</li>
+</ol>
+<h2 id="文件长度"><a href="#文件长度" class="headerlink" title="文件长度"></a>文件长度</h2><ol>
+<li>stat 结构体中 st_size 表示文件长度，单位为字节，<strong>只对普通文件、目录文件和符号链接有意义</strong></li>
+<li>普通文件长度可以为 0，开始读时，直接返回 EOF</li>
+<li>符号链接的文件长度为文件名中的实际字节数</li>
+<li>带空洞的文件长度大于磁盘中的 byte 数</li>
+</ol>
+<h2 id="文件系统"><a href="#文件系统" class="headerlink" title="文件系统"></a>文件系统</h2><ol>
+<li>磁盘、分区与文件系统：一个磁盘可能有多个分区，每个分区可能有各自的文件系统 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/4-files-and-directories/A8A5CD64-5368-42EF-8C98-7636319E0E36.png" class=""></li>
+<li>inode 和数据块<ol>
+<li>inode 中存储了 links 数，即指向该 inode 的目录项数，links 数为 0 时，才会删除文件<ol>
+<li>可以通过 unlink 删除目录项到 inode 的链接</li>
+<li>符号链接并不会增加 inode 中的链接计数，因为符号链接是被链接文件的路径</li>
+</ol>
+</li>
+<li>inode 中包含了文件有关的所有信息，stat 中的大部分信息取自 inode</li>
+</ol>
+</li>
+<li><strong>文件名和 inode 编号存放在目录项（dentry）中</strong></li>
+<li>同一个文件系统下，重命名文件只会构造一个执行现有 inode 的目录项(dentry)并删除老的 dentry，因此<strong>mv不会改变链接计数</strong></li>
+<li>一个 dentry 不能指向另一个文件系统的 inode，因为 dentry 中的 inode 编号必须是同一个文件系统，因此 hard link 不能跨文件系统</li>
+<li>任何一个目录文件至少包含 2 个 inode 链接计数（1 个文件名称 + 1 个 <code>.</code>），如果含有子目录，每有一个子目录，增加一个 inode 链接计数（<code>..</code>） <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/4-files-and-directories/1647FEC4-90B5-4315-B5A4-BD0C576619F4.png" class="">
+
+
+</li>
+</ol>
+<h2 id="链接文件"><a href="#链接文件" class="headerlink" title="链接文件"></a>链接文件</h2><ol>
+<li>硬链接：指向文件 inode，符号链接指向另一个文件的路径</li>
+<li>引入软连接的原因：避开硬链接的限制<ol>
+<li>硬链接通常要求<strong>链接和文件处于同一文件系统</strong></li>
+<li><strong>只有超级用户才允许对目录进行硬链接</strong></li>
+</ol>
+</li>
+</ol>
+<h2 id="文件时间"><a href="#文件时间" class="headerlink" title="文件时间"></a>文件时间</h2><ol>
+<li>时间戳 atime, mtime, ctime<ol>
+<li>atime 文件<strong>数据</strong>最后<strong>访问</strong>时间，如 read 会更新 atime</li>
+<li>mtime 文件<strong>数据</strong>最后<strong>修改</strong>时间，如 write 会更新 mtime</li>
+<li>ctime 文件<strong>inode状态</strong>最后更改时间，如果 chmod, chown, ln</li>
+</ol>
+</li>
+<li>文件系统不维护对一个 inode 的最后一次<strong>访问</strong>时间，即 <code>access</code> 和 <code>stat</code> 并不改变任何一个时间戳</li>
+<li>ctime 不能通过函数修改</li>
+</ol>
+<h2 id="设备特殊文件"><a href="#设备特殊文件" class="headerlink" title="设备特殊文件"></a>设备特殊文件</h2><ol>
+<li>每个文件系统所在的存储设备都由其主、次设备号表示<ol>
+<li>主设备号：标识设备驱动程序</li>
+<li>次设备号：标识特定子设备</li>
+</ol>
+</li>
+<li>使用 major、minor 宏来访问主、次设备号</li>
+<li>文件系统中与每个文件名关联的 st_dev 值是文件系统的设备号</li>
+<li>只有字符特殊设备和块特殊设备才有 st_rdev 值，包含实际设备的设备号</li>
+</ol>
+
+      
+    </div>
+    <div class="article-footer">
+      <blockquote class="mt-2x">
+  <ul class="post-copyright list-unstyled">
+    
+    <li class="post-copyright-link hidden-xs">
+      <strong>本文链接：</strong>
+      <a href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/4-files-and-directories/" title="第 4 章 - 文件和目录" target="_blank" rel="external">http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/4-files-and-directories/</a>
+    </li>
+    
+    <li class="post-copyright-license">
+      <strong>版权声明： </strong> 本博客所有文章除特别声明外，均采用 <a href="http://creativecommons.org/licenses/by/4.0/deed.zh" target="_blank" rel="external">CC BY 4.0 CN协议</a> 许可协议。转载请注明出处！
+    </li>
+  </ul>
+</blockquote>
+
+
+<div class="panel panel-default panel-badger">
+  <div class="panel-body">
+    <figure class="media">
+      <div class="media-left">
+        <a href="https://github.com/xiaozongyang" target="_blank" class="img-burn thumb-sm visible-lg">
+          <img src="/images/avatar.jpg" class="img-rounded w-full" alt="">
+        </a>
+      </div>
+      <div class="media-body">
+        <h3 class="media-heading"><a href="https://github.com/xiaozongyang" target="_blank"><span class="text-dark">肖宗阳</span><small class="ml-1x">Inf Developer</small></a></h3>
+        <div>基础架构工程师，专注可见性领域。</div>
+      </div>
+    </figure>
+  </div>
+</div>
+
+
+    </div>
+  </article>
+  
+    
+  <section id="comments">
+  	
+      <div id="vcomments"></div>
+    
+  </section>
+
+
+  
+</div>
+
+  <nav class="bar bar-footer clearfix" data-stick-bottom>
+  <div class="bar-inner">
+  
+  <ul class="pager pull-left">
+    
+    <li class="prev">
+      <a href="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/5-standard-io-library/" title="第 5 章 - 标准 IO 库"><i class="icon icon-angle-left" aria-hidden="true"></i><span>&nbsp;&nbsp;Newer</span></a>
+    </li>
+    
+    
+    <li class="next">
+      <a href="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/3-file-io/" title="第 3 章 - 文件 IO"><span>Older&nbsp;&nbsp;</span><i class="icon icon-angle-right" aria-hidden="true"></i></a>
+    </li>
+    
+    
+  </ul>
+  
+  
+  <!-- Button trigger modal -->
+  <button type="button" class="btn btn-fancy btn-donate pop-onhover bg-gradient-warning" data-toggle="modal" data-target="#donateModal"><span>$</span></button>
+  <!-- <div class="wave-icon wave-icon-danger btn-donate" data-toggle="modal" data-target="#donateModal">
+    <div class="wave-circle"><span class="icon"><i class="icon icon-bill"></i></span></div>
+  </div> -->
+  
+  
+  <div class="bar-right">
+    
+    <div class="share-component" data-sites="weibo,qq,wechat,facebook,twitter" data-mobile-sites="weibo,qq,qzone"></div>
+    
+  </div>
+  </div>
+</nav>
+  
+<!-- Modal -->
+<div class="modal modal-center modal-small modal-xs-full fade" id="donateModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content donate">
+      <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+      <div class="modal-body">
+        <div class="donate-box">
+          <div class="donate-head">
+            <p>Maybe you could buy me a cup of coffee.</p>
+          </div>
+          <div class="tab-content">
+            <div role="tabpanel" class="tab-pane fade active in" id="alipay">
+              <div class="donate-payimg">
+                <img src="/images/donate/alipayimg.png" alt="Scan Qrcode" title="Scan" />
+              </div>
+              <p class="text-muted mv">Scan this qrcode</p>
+              <p class="text-grey">Open alipay app scan this qrcode, buy me a coffee!</p>
+            </div>
+            <div role="tabpanel" class="tab-pane fade" id="wechatpay">
+              <div class="donate-payimg">
+                <img src="/images/donate/wechatpayimg.png" alt="Scan Qrcode" title="Scan" />
+              </div>
+              <p class="text-muted mv">Scan this qrcode</p>
+              <p class="text-grey">Open wechat app scan this qrcode, buy me a coffee!</p>
+            </div>
+          </div>
+          <div class="donate-footer">
+            <ul class="nav nav-tabs nav-justified" role="tablist">
+              <li role="presentation" class="active">
+                <a href="#alipay" id="alipay-tab" role="tab" data-toggle="tab" aria-controls="alipay" aria-expanded="true"><i class="icon icon-alipay"></i> alipay</a>
+              </li>
+              <li role="presentation" class="">
+                <a href="#wechatpay" role="tab" id="wechatpay-tab" data-toggle="tab" aria-controls="wechatpay" aria-expanded="false"><i class="icon icon-wepay"></i> wechat payment</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+</main>
+
+  <footer class="footer" itemscope itemtype="http://schema.org/WPFooter">
+	
+	
+    <ul class="social-links">
+    	
+        <li><a href="https://github.com/xiaozongyang" target="_blank" title="Github" data-toggle=tooltip data-placement=top><i class="icon icon-github"></i></a></li>
+        
+    </ul>
+
+    <div class="copyright">
+    	
+        <div class="publishby">
+        	Theme by <a href="https://github.com/cofess" target="_blank"> cofess </a>base on <a href="https://github.com/cofess/hexo-theme-pure" target="_blank">pure</a>.
+        </div>
+    </div>
+    
+        <script src='https://unpkg.com/mermaid@7.1.2/dist/mermaid.min.js'></script>
+        <script>
+            if (window.mermaid) {
+              mermaid.initialize({theme: 'forest'});
+            }
+        </script>
+    
+
+</footer>
+
+  <script src="//cdn.jsdelivr.net/npm/jquery@1.12.4/dist/jquery.min.js"></script>
+<script>
+window.jQuery || document.write('<script src="js/jquery.min.js"><\/script>')
+</script>
+
+<script src="/js/plugin.min.js"></script>
+
+
+<script src="/js/application.js"></script>
+
+
+    <script>
+(function (window) {
+    var INSIGHT_CONFIG = {
+        TRANSLATION: {
+            POSTS: 'Posts',
+            PAGES: 'Pages',
+            CATEGORIES: 'Categories',
+            TAGS: 'Tags',
+            UNTITLED: '(Untitled)',
+        },
+        ROOT_URL: '/',
+        CONTENT_URL: '/content.json',
+    };
+    window.INSIGHT_CONFIG = INSIGHT_CONFIG;
+})(window);
+</script>
+
+<script src="/js/insight.js"></script>
+
+
+
+
+
+
+   
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+
+
+
+
+
+   
+    
+  <script src="//cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/valine"></script>
+  <script type="text/javascript">
+  var GUEST = ['nick', 'mail', 'link'];
+  var meta = 'nick,mail,link';
+  meta = meta.split(',').filter(function(item) {
+    return GUEST.indexOf(item) > -1;
+  });
+  new Valine({
+    el: '#vcomments',
+    verify: false,
+    notify: false,
+    appId: 'pqPNKCepVUMmvUn3bs2eFBRQ-gzGzoHsz',
+    appKey: 'CPIqM0YktX8yI835XkAUtTh6',
+    placeholder: 'Just go go',
+    avatar: 'mm',
+    meta: meta,
+    pageSize: '10' || 10,
+    visitor: false
+  });
+  </script>
+
+     
+
+
+
+
+
+
+
+</body>
+</html>

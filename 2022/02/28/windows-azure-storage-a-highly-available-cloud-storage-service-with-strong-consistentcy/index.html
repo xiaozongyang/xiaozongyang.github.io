@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang=zh>
+<head>
+  <meta charset="utf-8">
+  
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, minimal-ui">
+  <meta name="renderer" content="webkit">
+  <meta http-equiv="Cache-Control" content="no-transform" />
+  <meta http-equiv="Cache-Control" content="no-siteapp" />
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="format-detection" content="telephone=no,email=no,adress=no">
+  <!-- Color theme for statusbar -->
+  <meta name="theme-color" content="#000000" />
+  <!-- 强制页面在当前窗口以独立页面显示,防止别人在框架里调用页面 -->
+  <meta http-equiv="window-target" content="_top" />
+  
+  
+  <title>Windows Azure Storage: A highly Available Cloud Storage Service with Strong Consistentcy | XiaoZongyang&#39;s Blog</title>
+  <meta name="description" content="原文地址 https:&#x2F;&#x2F;sigops.org&#x2F;s&#x2F;conferences&#x2F;sosp&#x2F;2011&#x2F;current&#x2F;2011-Cascais&#x2F;printable&#x2F;11-calder.pdf   数据模型：Blob（文件）、Table（结构化数据）、Queue（消息） 主要特性 强一致性 全球维度、可扩展的命名空间：任何地区的用户都可以访问数据 灾难恢复：WAS 将数据存储在不同的数据中心中，数据中心">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Windows Azure Storage: A highly Available Cloud Storage Service with Strong Consistentcy">
+<meta property="og:url" content="http://xiaozongyang.github.io/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/index.html">
+<meta property="og:site_name" content="Xiao Zongyang&#39;s Blog">
+<meta property="og:description" content="原文地址 https:&#x2F;&#x2F;sigops.org&#x2F;s&#x2F;conferences&#x2F;sosp&#x2F;2011&#x2F;current&#x2F;2011-Cascais&#x2F;printable&#x2F;11-calder.pdf   数据模型：Blob（文件）、Table（结构化数据）、Queue（消息） 主要特性 强一致性 全球维度、可扩展的命名空间：任何地区的用户都可以访问数据 灾难恢复：WAS 将数据存储在不同的数据中心中，数据中心">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="http://xiaozongyang.github.io/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/fig-1-High-level-architecture.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/fig-2-example-stream-with-four-extents.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/fig-3-stream-layer-architecture.png">
+<meta property="og:image" content="http://xiaozongyang.github.io/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/fig-4-partition-layer-architecture.png">
+<meta property="article:published_time" content="2022-02-28T03:24:10.000Z">
+<meta property="article:modified_time" content="2022-03-05T08:19:04.631Z">
+<meta property="article:author" content="Xiao Zongyang">
+<meta property="article:tag" content="读书笔记">
+<meta property="article:tag" content="存储">
+<meta property="article:tag" content="paper">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://xiaozongyang.github.io/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/fig-1-High-level-architecture.png">
+  <!-- Canonical links -->
+  <link rel="canonical" href="http://xiaozongyang.github.io/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/index.html">
+  
+  
+    <link rel="icon" href="/favicon.png" type="image/x-icon">
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+  
+  
+  
+  
+<meta name="generator" content="Hexo 4.2.1"><link rel="alternate" href="/atom.xml" title="Xiao Zongyang's Blog" type="application/atom+xml">
+</head>
+
+
+<body class="main-center" itemscope itemtype="http://schema.org/WebPage">
+  <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+  <div class="slimContent">
+    <div class="navbar-header">
+      
+      
+      <div class="profile-block text-center">
+        <a id="avatar" href="https://github.com/xiaozongyang" target="_blank">
+          <img class="img-circle img-rotate" src="/images/avatar.jpg" width="200" height="200">
+        </a>
+        <h2 id="name" class="hidden-xs hidden-sm">肖宗阳</h2>
+        <h3 id="title" class="hidden-xs hidden-sm hidden-md">Inf Developer</h3>
+        <small id="location" class="text-muted hidden-xs hidden-sm"><i class="icon icon-map-marker"></i> Beijig, China</small>
+      </div>
+      
+      <div class="search" id="search-form-wrap">
+
+    <form class="search-form sidebar-form">
+        <div class="input-group">
+            <input type="text" class="search-form-input form-control" placeholder="Search" />
+            <span class="input-group-btn">
+                <button type="submit" class="search-form-submit btn btn-flat" onclick="return false;"><i class="icon icon-search"></i></button>
+            </span>
+        </div>
+    </form>
+    <div class="ins-search">
+  <div class="ins-search-mask"></div>
+  <div class="ins-search-container">
+    <div class="ins-input-wrapper">
+      <input type="text" class="ins-search-input" placeholder="Type something..." x-webkit-speech />
+      <button type="button" class="close ins-close ins-selectable" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">×</span></button>
+    </div>
+    <div class="ins-section-wrapper">
+      <div class="ins-section-container"></div>
+    </div>
+  </div>
+</div>
+
+
+</div>
+      <button class="navbar-toggle collapsed" type="button" data-toggle="collapse" data-target="#main-navbar" aria-controls="main-navbar" aria-expanded="false">
+        <span class="sr-only">Toggle navigation</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+    </div>
+    <nav id="main-navbar" class="collapse navbar-collapse" itemscope itemtype="http://schema.org/SiteNavigationElement" role="navigation">
+      <ul class="nav navbar-nav main-nav menu-highlight">
+        
+        
+        <li class="menu-item menu-item-home">
+          <a href="/.">
+            
+            <i class="icon icon-home-fill"></i>
+            
+            <span class="menu-title">Home</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-archives">
+          <a href="/archives">
+            
+            <i class="icon icon-archives-fill"></i>
+            
+            <span class="menu-title">Archives</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-repository">
+          <a href="/repository">
+            
+            <i class="icon icon-project"></i>
+            
+            <span class="menu-title">Repository</span>
+          </a>
+        </li>
+        
+        
+        <li class="menu-item menu-item-about">
+          <a href="/about">
+            
+            <i class="icon icon-cup-fill"></i>
+            
+            <span class="menu-title">About</span>
+          </a>
+        </li>
+        
+      </ul>
+      
+	
+    <ul class="social-links">
+    	
+        <li><a href="https://github.com/xiaozongyang" target="_blank" title="Github" data-toggle=tooltip data-placement=top><i class="icon icon-github"></i></a></li>
+        
+    </ul>
+
+    </nav>
+  </div>
+</header>
+
+  
+    <aside class="sidebar" itemscope itemtype="http://schema.org/WPSideBar">
+  <div class="slimContent">
+    
+      <div class="widget">
+    <h3 class="widget-title">Board</h3>
+    <div class="widget-body">
+        <div id="board">
+            <div class="content">
+                <p>欢迎交流与分享经验!</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Categories</h3>
+    <div class="widget-body">
+      <ul class="category-list"><li class="category-list-item"><a class="category-list-link" href="/categories/summary/">summary</a><span class="category-list-count">1</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget-body">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/arts/" rel="tag">ARTS</a><span class="tag-list-count">5</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/prometheus/" rel="tag">Prometheus</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/pulsar/" rel="tag">Pulsar</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/rocketmq/" rel="tag">RocketMQ</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/victoriametrics/" rel="tag">VictoriaMetrics</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/apue/" rel="tag">apue</a><span class="tag-list-count">17</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/benchmark/" rel="tag">benchmark</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/java/" rel="tag">java</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/jmh/" rel="tag">jmh</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/kotlin/" rel="tag">kotlin</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/kv/" rel="tag">kv</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/maven/" rel="tag">maven</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/mq/" rel="tag">mq</a><span class="tag-list-count">2</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/paper/" rel="tag">paper</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/pulsar/" rel="tag">pulsar</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/summary/" rel="tag">summary</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/unix/" rel="tag">unix</a><span class="tag-list-count">17</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F/" rel="tag">分布式</a><span class="tag-list-count">12</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E5%AD%98%E5%82%A8/" rel="tag">存储</a><span class="tag-list-count">13</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/" rel="tag">文件系统</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB/" rel="tag">源码阅读</a><span class="tag-list-count">1</span></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" rel="tag">读书笔记</a><span class="tag-list-count">30</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget-body tagcloud">
+      <a href="/tags/arts/" style="font-size: 13.33px;">ARTS</a> <a href="/tags/prometheus/" style="font-size: 13.17px;">Prometheus</a> <a href="/tags/pulsar/" style="font-size: 13px;">Pulsar</a> <a href="/tags/rocketmq/" style="font-size: 13.17px;">RocketMQ</a> <a href="/tags/victoriametrics/" style="font-size: 13px;">VictoriaMetrics</a> <a href="/tags/apue/" style="font-size: 13.83px;">apue</a> <a href="/tags/benchmark/" style="font-size: 13px;">benchmark</a> <a href="/tags/java/" style="font-size: 13.17px;">java</a> <a href="/tags/jmh/" style="font-size: 13px;">jmh</a> <a href="/tags/kotlin/" style="font-size: 13px;">kotlin</a> <a href="/tags/kv/" style="font-size: 13px;">kv</a> <a href="/tags/maven/" style="font-size: 13px;">maven</a> <a href="/tags/mq/" style="font-size: 13.17px;">mq</a> <a href="/tags/paper/" style="font-size: 13px;">paper</a> <a href="/tags/pulsar/" style="font-size: 13px;">pulsar</a> <a href="/tags/summary/" style="font-size: 13px;">summary</a> <a href="/tags/unix/" style="font-size: 13.83px;">unix</a> <a href="/tags/%E5%88%86%E5%B8%83%E5%BC%8F/" style="font-size: 13.5px;">分布式</a> <a href="/tags/%E5%AD%98%E5%82%A8/" style="font-size: 13.67px;">存储</a> <a href="/tags/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/" style="font-size: 13px;">文件系统</a> <a href="/tags/%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB/" style="font-size: 13px;">源码阅读</a> <a href="/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" style="font-size: 14px;">读书笔记</a>
+    </div>
+  </div>
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Archive</h3>
+    <div class="widget-body">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/02/">二月 2022</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2022/01/">一月 2022</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/10/">十月 2021</a><span class="archive-list-count">19</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/09/">九月 2021</a><span class="archive-list-count">16</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/04/">四月 2021</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2021/03/">三月 2021</a><span class="archive-list-count">2</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/07/">七月 2020</a><span class="archive-list-count">1</span></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2020/06/">六月 2020</a><span class="archive-list-count">2</span></li></ul>
+    </div>
+  </div>
+
+
+    
+      
+  <div class="widget">
+    <h3 class="widget-title">Recent Posts</h3>
+    <div class="widget-body">
+      <ul class="recent-post-list list-unstyled no-thumbnail">
+        
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/" class="title">Windows Azure Storage: A highly Available Cloud Storage Service with Strong Consistentcy</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2022-02-28T03:24:10.000Z" itemprop="datePublished">2022-02-28</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2022/01/04/Blackbox-Exporter-Url-Probe-%E8%B0%83%E7%A0%94/" class="title">Blackbox-Exporter-Url-Probe-调研</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2022-01-04T04:18:52.527Z" itemprop="datePublished">2022-01-04</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/" class="title">pulsar 延时消息重放时间测试</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T13:00:47.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/distributed-storage-system-view-on-mq/" class="title">从分布式存储系统的角度看 MQ</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T12:50:24.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+          <li>
+            
+            <div class="item-inner">
+              <p class="item-category">
+                
+              </p>
+              <p class="item-title">
+                <a href="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/17-advanced-ipc/" class="title">第 17 章 - 高级进程间通信</a>
+              </p>
+              <p class="item-date">
+                <time datetime="2021-10-09T10:22:31.000Z" itemprop="datePublished">2021-10-09</time>
+              </p>
+            </div>
+          </li>
+          
+      </ul>
+    </div>
+  </div>
+  
+
+    
+  </div>
+</aside>
+
+  
+  
+<main class="main" role="main">
+  <div class="content">
+  <article id="post-windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy" class="article article-type-post" itemscope itemtype="http://schema.org/BlogPosting">
+    
+    <div class="article-header">
+      
+        
+  
+    <h1 class="article-title" itemprop="name">
+      Windows Azure Storage: A highly Available Cloud Storage Service with Strong Consistentcy
+    </h1>
+  
+
+      
+      <div class="article-meta">
+        <span class="article-date">
+    <i class="icon icon-calendar-check"></i>
+	<a href="/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/" class="article-date">
+	  <time datetime="2022-02-28T03:24:10.000Z" itemprop="datePublished">2022-02-28</time>
+	</a>
+</span>
+        
+        
+  <span class="article-tag">
+    <i class="icon icon-tags"></i>
+	<a class="article-tag-link" href="/tags/paper/" rel="tag">paper</a>, <a class="article-tag-link" href="/tags/%E5%AD%98%E5%82%A8/" rel="tag">存储</a>, <a class="article-tag-link" href="/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/" rel="tag">读书笔记</a>
+  </span>
+
+
+        
+	<span class="article-read hidden-xs">
+	    <i class="icon icon-eye-fill" aria-hidden="true"></i>
+	    <span id="busuanzi_container_page_pv">
+			<span id="busuanzi_value_page_pv">0</span>
+		</span>
+	</span>
+
+
+        <span class="post-comment"><i class="icon icon-comment"></i> <a href="/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/#comments" class="article-comment-link">Comments</a></span>
+        
+      </div>
+    </div>
+    <div class="article-entry marked-body" itemprop="articleBody">
+      
+        <blockquote>
+<p>原文地址 <a href="https://sigops.org/s/conferences/sosp/2011/current/2011-Cascais/printable/11-calder.pdf" target="_blank" rel="noopener">https://sigops.org/s/conferences/sosp/2011/current/2011-Cascais/printable/11-calder.pdf</a></p>
+</blockquote>
+<ol>
+<li>数据模型：Blob（文件）、Table（结构化数据）、Queue（消息）</li>
+<li>主要特性<ol>
+<li>强一致性</li>
+<li>全球维度、可扩展的命名空间：任何地区的用户都可以访问数据</li>
+<li>灾难恢复：WAS 将数据存储在不同的数据中心中，数据中心之间相隔上百英里</li>
+<li>多租户</li>
+</ol>
+</li>
+<li>全球命名空间<ol>
+<li>形式：<code>AccountName</code> + <code>PartitionName</code> + <code>ObjectName</code><ol>
+<li>AccountName：用户选择的账号名，是 DNS host name 一部分，用于定位 primary storage cluster 和数据中心</li>
+<li>PartitionName：用于定位数据在哪个节点</li>
+<li>ObjectName：可选，用于定为数据对象</li>
+</ol>
+</li>
+</ol>
+</li>
+<li>架构<ol>
+<li>Storage Stamps: 存储节点集群，包含多个 rack（故障域），包含 3 层<ol>
+<li>Stream 层：负责将数据落盘，维护副本数量（replicating），Stream即文件，由一系列有序的 chunk 组成，每个 chunk 称为 extent</li>
+<li>Parition 层：数据访问层<ol>
+<li>提供上层的数据抽象，如 blob, table, queue</li>
+<li>提供对象命名空间</li>
+<li>在 stream 层上存储对象数据（object data）</li>
+<li>缓存数据对象减少磁盘 IO</li>
+<li>将一个集群内的对象数据进行分区，从而实现伸缩性</li>
+</ol>
+</li>
+<li>Frond-End 层：由一系列无状态服务组成，包括查找 AccountName、认证授权、路由</li>
+</ol>
+</li>
+<li>Location Service：管理所有 Storage Stamps 和所有集群的 Namespace 账号<ol>
+<li>增加 region， location, stamp</li>
+<li>记录每个 storage stamp 的资源利用情况<img src="/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/fig-1-High-level-architecture.png" class=""></li>
+</ol>
+</li>
+</ol>
+</li>
+<li>Replication Engines<ol>
+<li>Intra-Stamp Replication(Stream Layer)：集群内的同步复制以确保写入数据的持久性，维护足够数量的副本，<strong>Stream 级别</strong></li>
+<li>Inter-Stamp Replication(Partition Layer)：集群间的异步复制，用来容灾（两个集群内都有数据）或迁移数据，<strong>object 级别</strong></li>
+</ol>
+</li>
+</ol>
+<h2 id="Stream-Layer"><a href="#Stream-Layer" class="headerlink" title="Stream Layer"></a>Stream Layer</h2><ol>
+<li>Stream Layer：为 Partition Layer 提供文件系统的命名空间和接口，但是<strong>只提供追加写语义</strong> <img src="/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/fig-2-example-stream-with-four-extents.png" class="">
+<ol start="2">
+<li>Extent：Stream 层数据复制的基本单元，由多个连续 Block 组成</li>
+<li>Stream：<ol>
+<li>每个 Stream 在命名空间中拥有一个命名</li>
+<li>Stream 在 Partition 层看起来像一个大问题件</li>
+<li>Stream 是多个 Extent 指针的有序列表</li>
+<li>Stream 可以通过串联多个 Extent 来构造</li>
+<li>Stream 中只有最后一个 Extent 可写，其他 Extent 只读（Sealed）</li>
+</ol>
+</li>
+</ol>
+</li>
+<li>主要组件：StreamManager &amp; Extent Nodes<img src="/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/fig-3-stream-layer-architecture.png" class=""></li>
+<li>StreamManager 职责<ol>
+<li>管理元数据，即 extent 与 stream 映射关系、extent 分布信息</li>
+<li>监控所有 EN 节点健康状况</li>
+<li>创建 extent 并分配给 EN</li>
+<li>当 EN 硬件故障或不可用时，进行 extent 复制</li>
+<li>对 extent 进行 GC，回收没有任何 stream 指向的 extent</li>
+<li>根据 stream policy 调度 EC</li>
+</ol>
+</li>
+<li>StreamManager 特点<ol>
+<li>不知道 Block 的概念，只关注 stream 和 extent</li>
+<li>SM 不在客户端请求的关键路径上</li>
+<li>SM 只管一个集群内的元数据，因此内存中足够保留这些信息</li>
+</ol>
+</li>
+<li>Extent Node 职责：负责存储所分配的 extent</li>
+<li>Extent Node 特点<ol>
+<li>不知道 Stream 的概念，只知道 extent 和 block</li>
+<li>磁盘结构：每个 extent 是一个保存数据块列表、数据块checksum 及索引（<code>extent offset -&gt; block + block file localtion</code>）</li>
+<li>每个 EN 包含其所拥有所有 Extent 的视图，以及 extent peer 位置（SM 的缓存）</li>
+</ol>
+</li>
+<li>Append &amp; Seal Extent<ol>
+<li>Append 保证原子性</li>
+<li>Append 允许一次写多多个 block</li>
+<li>如果 client 调用 append 失败，应当重试或 seal extent，对于事务写通过 sequence number 去重，对于数据，RangePartition 只会指向最后一次写入，之前的写入会被 GC</li>
+<li>Extent 具有 target size，由 Paritition Layer 指定，达到 target size 后，extent 变为 sealed（不可写）</li>
+</ol>
+</li>
+<li>Stream Layer 提供的保证<ol>
+<li>EN 向 client 返回”数据写入成功“后，之后的读操作从任何一个副本都能读到相同的数据</li>
+<li>Extent 变为 Sealed 之后，任何一个副本数都能读到相同的数据</li>
+</ol>
+</li>
+<li>复制流程（3 副本）<ol>
+<li>创建 extent 时，会为 extent 分配 3 个副本，1 主 2 从，<strong>extent 副本主从关系和位置在 extent sealed 前不会发生变化</strong>，因此不需要 lease</li>
+<li>client 写入到主 EN 上，由<strong>主 EN 负责</strong>将更新同步到从 EN，主 EN 职责如下<ol>
+<li>决定 extent 的写入 offset</li>
+<li>存在多个并发写入时，为写入排序</li>
+<li>将写入请求转发给 2 个从副本</li>
+<li>只有当 2 个从副本都写入成功后，才给 client 返回写入成功</li>
+</ol>
+</li>
+<li>sm 分配 extent 时，副本位置信息发送给 client，因此 client 知道副本位置和主 EN 是谁</li>
+<li>当某个副本写入失败时，client 向 SM 报告错误，SM 将现在的 extent 副本变为 sealed，并在其他 EN 上重新分配 3 个副本，将新的位置信息返回给 client，同时 SM 会创建新的副本来保证可用副本数</li>
+</ol>
+</li>
+<li>Sealing<ol>
+<li>Sealing 操作由 SM 协调，<code>commit length</code> 由 SM 决定，一旦 sealing 操作完成，<code>comit length</code> 永远不会发生变化</li>
+<li>定 <code>commit length</code> 逻辑<ol>
+<li>SM 询问 3 个 EN，给定 extent 的当前长度</li>
+<li>如果 3 个 EN 返回的长度都相同，则直接用这个长度</li>
+<li>如果 2 个 EN 长度相同，另外一个 EN 长度更长或更短，在 SM <strong>能访问</strong>的 EN 中选择<strong>最短的长度</strong>作为 <code>commit length</code>，由于不是所有副本都写入成功，主 EN 还没给 client 返回写入成功，因此不会丢数据</li>
+<li>如果 1 个 EN 在 Sealing 阶段无法被 SM 访问，但是 Sealing 结束后恢复，SM 会强制该 EN 将 extent 同步到 <code>commit length</code></li>
+</ol>
+</li>
+</ol>
+</li>
+<li>发生网络分区，Partition Layer 只能和 EN 通信而无法和 SM 通信，解决办法如下<ol>
+<li>对于从已知位置读的场景，每次读都提供 offset 和 length，而 offset 和 length 是<em>之前成功的写操作返回的</em>，<strong>可以保证所有的读看到的数据相同</strong></li>
+<li>从某个位置读到 stream 末尾的场景，只有在 partition layer load 时才会发生<ol>
+<li>partition layer 保证，在 load 期间乜有写操作发生</li>
+<li>load 开始时，partition server 向 EN 发送 <code>check for commit length</code> 请求，来检查所有副本是否可用以及各副本长度是否相同，如果不同则 seal extent，保证在 load 期间所有副本的读视图相同</li>
+</ol>
+</li>
+</ol>
+</li>
+<li>为了节省成本，将 Sealed Extent 从 3 副本转为纠错码（EC），将冗余比降低到 1.3x-1.5x</li>
+<li>读请求负载均衡<ol>
+<li>每个读请求会携带一个 dealine，如果 EN 判断无法满足 deadline 约束就不尝试处理，直接给 client 返回结果，让 client 尝试其他 EN</li>
+<li>在 EC 场景下，如果某个数据分片所在 EN 负载很高，处理很慢，client 可以将读请求发送到其他数据分片和编码分片所在 EN，重建出所读的数据分片</li>
+</ol>
+</li>
+<li>由于 HDD 为了获得尽可能高的吞吐，通常会优先处理顺序读写，从而导致其他 IO 请求饥饿，在 WAS 通过自定义 IO 调度来保证 IO 请求公平性</li>
+<li>EN 上会保留一块盘作为日志盘，数据写入时先将数据追加到日志盘上，然后将写数据盘的请求入队，就可以返回写入成功<ol>
+<li>在数据搬到数据盘之前，数据缓存在内存中，读请求可以直接从内存读</li>
+<li>减少了读写请求对数据盘的竞争，改善了写入延迟</li>
+</ol>
+</li>
+</ol>
+<h2 id="Partition-Layer"><a href="#Partition-Layer" class="headerlink" title="Partition Layer"></a>Partition Layer</h2><ol>
+<li><p>职责</p>
+<ol>
+<li>为不同存储对象类型（Blob, Table, Queue）提供数据模型和语义</li>
+<li>为存储对象提供命名空间支持</li>
+<li>为访问存储对象提供负载均衡能力</li>
+<li>为访问存储对象提供事务顺序和强一致性保证</li>
+</ol>
+</li>
+<li><p>ObjectTable：内部数据结构</p>
+<ol>
+<li>动态划分成多个 RangePartition</li>
+<li>每个 RangeParitition 是一系列连续有界的 key</li>
+<li>不同 RangeParitition 之间的 key 没有冲地热</li>
+<li>任何一个 key 都存在某个 RangePartition 中</li>
+<li>ObjectTable 可以增长到 PB 级别</li>
+</ol>
+</li>
+<li><p>Partition Layer 中 OT 的应用</p>
+<ol>
+<li>Account Table：存储每个账号的元数据和配置</li>
+<li>Blob Table: 存储集群中所有的 blob</li>
+<li>Entity Table：存储集群中所有的实体行，用在 Table 场景下</li>
+<li>Message Table：存储集群中所有的消息</li>
+<li>Schema Table：保存所有 OT 的 schema 信息</li>
+<li>Partition Table：保存所有 OT 的 RangePartition 及其位置信息，<em>用于路由</em></li>
+</ol>
+</li>
+<li><p>Blob Table, Entity Table, Message Table 的主键由 AccountName, PartitionName, ObjectName 组成，会为这 3 个字段建索引</p>
+</li>
+<li><p>架构</p>
+<ol>
+<li>Partition Manager(PM)<ol>
+<li>负责将 OT 分割成 RangePartition</li>
+<li>将 Partition 分配给 Partition Server(PS)，保证一个 Partition 会且只会分配给一个 PS，不同 PS 的 RangePartition 间没有重叠</li>
+<li>保存 Partition 和 PS 之间的映射关系，维护在 Partition Map Table 中</li>
+<li>负责 PS 之间 RangePartition 的负载均衡</li>
+<li>同时会运行多个 PM 实例，通过 LockService 选主，主节点保持 lease</li>
+</ol>
+</li>
+<li>Partition Server(PS)<ol>
+<li>负责处理 RangePartition 上的请求</li>
+<li>RangePartition 持久化在 stream 上，PS 中维护内存缓存</li>
+<li>通过 LockService 保证，同一个 RangePartition 不会同时被 2 个 PS 实例维护，从而提供强一致性</li>
+<li>一个 PS 实例可以同时为多个 OT 的 RangePartition 提供服务</li>
+</ol>
+</li>
+<li>Lock Service：提供类似 Chubby 的分布式锁服务<img src="/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/fig-4-partition-layer-architecture.png" class="">
+</li>
+</ol>
+</li>
+<li><p>RangePartition</p>
+<ol>
+<li>持久化数据结构：由 Metadata Stream, Commit Log Stream, Row Data Stream, Blob Data Stream 组成，采用 LSM Tree 结构维护<ol>
+<li>Metadata Stream：维护 RangePartition 的入口，为 PS 提供足够的信息用来载入 RangePartition，将分片分配给 PS 时即为该 PS 提供 RangePartition 的 Metadata Stream 名称</li>
+<li>Commit Log Stream：保存最近的写操作（插入、更新、删除）的操作日志</li>
+<li>Row Data Stream：保存 RangePartition 的 checkpoint</li>
+<li>Blob Data Stream：仅被 Blob Table 用于存储 blob 数据</li>
+</ol>
+</li>
+<li>内存数据结构：由 Memory Table, Index Cache, Row Data Cache, Bloom Filters 组成<ol>
+<li>Memory Table: commit log 的内存缓存，缓存还未写入到 checkpoint 的内存状态</li>
+<li>Index Cache: 保存 checkpoint 索引，checkpoint 的索引和数据分开缓存，以保证在内存中缓存尽可能多的索引</li>
+<li>Row Data Cache: 保存 checkpoint 数据，查询时同时查 Row Data Cache 和 Memory Table，类似 LSM Tree 中的 Immutable Memory Table</li>
+<li>Bloom Filters: 用于判断某个 key 是否在 RangePartition 中</li>
+</ol>
+</li>
+</ol>
+</li>
+<li><p>RangePartition Load Balancing</p>
+<ol>
+<li>由 Load Balance, Split, Merge 3 种操作完成<ol>
+<li>Merge: 当某个 PS 上流量太高时，将上面的部分 RangePartition 分配到到 其他 PS 上</li>
+<li>Split: 将一个 RangePartition 分类成 2 个或多个 RangePartition，然后对分割后的 RangePartition 进行负载均衡</li>
+<li>Merge: 将冷数据和刚加载的(lightly loaded) RangePartition 合并到一起，要求合并前的 RangePartition key 范围连续</li>
+</ol>
+</li>
+<li>维护 RangePartition 总数的高、低水位，保证其数量在一定范围内<ol>
+<li>当 RangePartition 总数到达高水位，则加快 Merge 速率</li>
+<li>当 RangePartition 总数到达低水位，则加快 Split 速率</li>
+</ol>
+</li>
+<li>PM 从每个 PS 收集每个 RangePartition 的指标，根据指标来决策是否需要对 RangePartition 进行 Split/Merge/Load Balance，收集指标包括 tps, 平均等待 tps，限流比率, CPU 利用率，请求延迟，RangePartition 数据大小</li>
+<li>LoadBalance 动作由 PM 先给旧 PS 发送 <code>unload</code>，然后再给新分配的 PS 发送 <code>load</code> 实现</li>
+<li>Split 决策由 PM 做出，分割的 key 范围由 PS 决定</li>
+</ol>
+</li>
+<li><p>Split 操作步骤：将 RangePartition B 拆分为 (C, D)</p>
+</li>
+</ol>
+<pre class="mermaid">graph TD
+    A[1 PM 向 PS 发送拆分命令] --> B[PS 停止对 B 的服务]
+    B --> C[2 PS 通过 MUltiModify 操作基于 B 的 Stream 创建 C,D 的 Stream]
+    C --> D[PS 将拆分后的 key 范围写入到 C,D 的 metadata stream]
+    D --> E[PS 为 C 和 D 提供服务]
+    E --> F[PS 通知 PM Split 操作完成]
+    F --> G[PM 更新 PartitionMapTable]
+    G --> H[PM 将 C,D 中的一个 Partition 分配给另一个 PS]</pre>
+<ol start="9">
+<li>Merge 操作步骤：将 RangePartition C, D 合并为 E</li>
+</ol>
+<pre class="mermaid">graph TD
+    A[PM 将 C, D 移动到同一个 PS 上] --> B[PM 通知 PS 将 C,D 合并为 E]
+    B --> C[PS  为 C,D 生成 checkpoint]
+    C --> D[PS 停掉 C,D 的流量]
+    D --> E[PS 通过 MultiModify 操作为 E 创建新的 commit log 和 data stream,  由 C,D 的 stream 拼接而来]
+    E --> F[PS 为 E 构建 metadatra stream]
+    F --> G[PS load E 并对外提供服务]</pre>
+<ol start="10">
+<li>Partition Layer 集群间副本复制（跨地域复制）<ol>
+<li>用户的集群分为 1 主 2 备，只有主接实时流量</li>
+<li>异步同步：主写入成功后，向 client 返回写入成功，然后向备同步更新</li>
+</ol>
+</li>
+</ol>
+<h2 id="Design-Choices-and-Lessons-Learned"><a href="#Design-Choices-and-Lessons-Learned" class="headerlink" title="Design Choices and Lessons Learned"></a>Design Choices and Lessons Learned</h2><ol>
+<li>计算存储分离：计算和存储能够独立扩展和负载均衡、容易实现多租户</li>
+<li>Range Parititon vs Hashing：选择基于范围分片的原因<ol>
+<li>范围分片实现性能隔离更容易</li>
+<li>范围分片对象分布的局部性更好，遍历效率更高</li>
+<li>范围分片的劣势：对连续写入不友好，所有的写入都落在最后一个 RangePartition</li>
+</ol>
+</li>
+<li>限流和隔离：使用 Sample-Hold 算法从历史请求中找到 top N 个最忙的 account 和 partition，判断是否需要限流</li>
+<li>自动负载均衡<ol>
+<li>最初使用请求延时和请求率的乘积作为负载指标，在大部分场景下能够很好公祖，但是<strong>无法发现因为扫描和网络利用率高而引起的 CPU 利用率高</strong>的问题，因此加入了 CPU 利用率，网络负载指标</li>
+<li>上述策略处理不好<em>分区分裂</em>(split)情况，因此引入了专门的机制，即<strong>根据请求限流、超时、分区大小</strong>来决定是否需要分裂分区</li>
+</ol>
+</li>
+<li>不同 RangePartition 的 Log 文件独立维护：在多租户场景下提供隔离性</li>
+<li>日志（Journaling）：最初发布 WAS 时没有 Journaling，遇到了很多读写流量互相干扰的问题，同时也行优化小块 IO 写入，最终引入了 Journaling</li>
+<li>Append-only System：<ol>
+<li>收益<ol>
+<li>简化了复制协议和故障处理</li>
+<li>低成本地建和保存快照、提供多版本</li>
+<li>在调查问题、恢复系统方面带来了很大收益</li>
+</ol>
+</li>
+<li>代价<ol>
+<li>GC 必须高效、可扩展</li>
+<li>虚拟地址空间保存的数据可能磁盘布局并不相同，在大数据集的情况下需要实现预取(prefetching) 逻辑</li>
+</ol>
+</li>
+</ol>
+</li>
+<li>End-to-End Checksum：能够有效避免写入损坏数据、发现节点硬件故障</li>
+<li>Upgrade:<ol>
+<li>升级域：类似故障域，多个节点组成一个升级域</li>
+<li>存在 Y 个故障域的情况下，一次最多允许升级 1/Y 的服务器</li>
+<li>采用滚动升级的方式来保证可用性</li>
+<li>升级期间存储节点需要下线，停机前需要同时 PM 将 RangePartition 挪到其他 PS 上</li>
+<li>升级期间会限制同一个升级域中最多允许失败的数目，超过限制则停止升级</li>
+<li>升级后运行一系列测试进行验证，然后才会升级下一批机器</li>
+</ol>
+</li>
+<li>同一个数据栈多种数据抽象：<ol>
+<li>允许 Blob, Table, Queue 这些数据抽象使用相同的数据复制策略、负载均衡系统、享受 stream 层和 partition 层的改进收益</li>
+<li>可以使用相同的硬件，从而降低成本</li>
+</ol>
+</li>
+<li>使用系统定义的 Object Table：使用系统定义的 Object Table 来实现 Blob, Table, Queue 抽象而不是暴露原始的 Object Table 语义给用户，从而降低了管理维护成本，同时能够独立于用户抽象而升级内部数据结构1. 限制单个用的存储空间不超过 100TB</li>
+</ol>
+
+      
+    </div>
+    <div class="article-footer">
+      <blockquote class="mt-2x">
+  <ul class="post-copyright list-unstyled">
+    
+    <li class="post-copyright-link hidden-xs">
+      <strong>本文链接：</strong>
+      <a href="http://xiaozongyang.github.io/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/" title="Windows Azure Storage: A highly Available Cloud Storage Service with Strong Consistentcy" target="_blank" rel="external">http://xiaozongyang.github.io/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/</a>
+    </li>
+    
+    <li class="post-copyright-license">
+      <strong>版权声明： </strong> 本博客所有文章除特别声明外，均采用 <a href="http://creativecommons.org/licenses/by/4.0/deed.zh" target="_blank" rel="external">CC BY 4.0 CN协议</a> 许可协议。转载请注明出处！
+    </li>
+  </ul>
+</blockquote>
+
+
+<div class="panel panel-default panel-badger">
+  <div class="panel-body">
+    <figure class="media">
+      <div class="media-left">
+        <a href="https://github.com/xiaozongyang" target="_blank" class="img-burn thumb-sm visible-lg">
+          <img src="/images/avatar.jpg" class="img-rounded w-full" alt="">
+        </a>
+      </div>
+      <div class="media-body">
+        <h3 class="media-heading"><a href="https://github.com/xiaozongyang" target="_blank"><span class="text-dark">肖宗阳</span><small class="ml-1x">Inf Developer</small></a></h3>
+        <div>基础架构工程师，专注可见性领域。</div>
+      </div>
+    </figure>
+  </div>
+</div>
+
+
+    </div>
+  </article>
+  
+    
+  <section id="comments">
+  	
+      <div id="vcomments"></div>
+    
+  </section>
+
+
+  
+</div>
+
+  <nav class="bar bar-footer clearfix" data-stick-bottom>
+  <div class="bar-inner">
+  
+  <ul class="pager pull-left">
+    
+    
+    <li class="next">
+      <a href="/2022/01/04/Blackbox-Exporter-Url-Probe-%E8%B0%83%E7%A0%94/" title="Blackbox-Exporter-Url-Probe-调研"><span>Older&nbsp;&nbsp;</span><i class="icon icon-angle-right" aria-hidden="true"></i></a>
+    </li>
+    
+    
+  </ul>
+  
+  
+  <!-- Button trigger modal -->
+  <button type="button" class="btn btn-fancy btn-donate pop-onhover bg-gradient-warning" data-toggle="modal" data-target="#donateModal"><span>$</span></button>
+  <!-- <div class="wave-icon wave-icon-danger btn-donate" data-toggle="modal" data-target="#donateModal">
+    <div class="wave-circle"><span class="icon"><i class="icon icon-bill"></i></span></div>
+  </div> -->
+  
+  
+  <div class="bar-right">
+    
+    <div class="share-component" data-sites="weibo,qq,wechat,facebook,twitter" data-mobile-sites="weibo,qq,qzone"></div>
+    
+  </div>
+  </div>
+</nav>
+  
+<!-- Modal -->
+<div class="modal modal-center modal-small modal-xs-full fade" id="donateModal" tabindex="-1" role="dialog">
+  <div class="modal-dialog" role="document">
+    <div class="modal-content donate">
+      <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+      <div class="modal-body">
+        <div class="donate-box">
+          <div class="donate-head">
+            <p>Maybe you could buy me a cup of coffee.</p>
+          </div>
+          <div class="tab-content">
+            <div role="tabpanel" class="tab-pane fade active in" id="alipay">
+              <div class="donate-payimg">
+                <img src="/images/donate/alipayimg.png" alt="Scan Qrcode" title="Scan" />
+              </div>
+              <p class="text-muted mv">Scan this qrcode</p>
+              <p class="text-grey">Open alipay app scan this qrcode, buy me a coffee!</p>
+            </div>
+            <div role="tabpanel" class="tab-pane fade" id="wechatpay">
+              <div class="donate-payimg">
+                <img src="/images/donate/wechatpayimg.png" alt="Scan Qrcode" title="Scan" />
+              </div>
+              <p class="text-muted mv">Scan this qrcode</p>
+              <p class="text-grey">Open wechat app scan this qrcode, buy me a coffee!</p>
+            </div>
+          </div>
+          <div class="donate-footer">
+            <ul class="nav nav-tabs nav-justified" role="tablist">
+              <li role="presentation" class="active">
+                <a href="#alipay" id="alipay-tab" role="tab" data-toggle="tab" aria-controls="alipay" aria-expanded="true"><i class="icon icon-alipay"></i> alipay</a>
+              </li>
+              <li role="presentation" class="">
+                <a href="#wechatpay" role="tab" id="wechatpay-tab" data-toggle="tab" aria-controls="wechatpay" aria-expanded="false"><i class="icon icon-wepay"></i> wechat payment</a>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+</main>
+
+  <footer class="footer" itemscope itemtype="http://schema.org/WPFooter">
+	
+	
+    <ul class="social-links">
+    	
+        <li><a href="https://github.com/xiaozongyang" target="_blank" title="Github" data-toggle=tooltip data-placement=top><i class="icon icon-github"></i></a></li>
+        
+    </ul>
+
+    <div class="copyright">
+    	
+        <div class="publishby">
+        	Theme by <a href="https://github.com/cofess" target="_blank"> cofess </a>base on <a href="https://github.com/cofess/hexo-theme-pure" target="_blank">pure</a>.
+        </div>
+    </div>
+    
+        <script src='https://unpkg.com/mermaid@7.1.2/dist/mermaid.min.js'></script>
+        <script>
+            if (window.mermaid) {
+              mermaid.initialize({theme: 'forest'});
+            }
+        </script>
+    
+
+</footer>
+
+  <script src="//cdn.jsdelivr.net/npm/jquery@1.12.4/dist/jquery.min.js"></script>
+<script>
+window.jQuery || document.write('<script src="js/jquery.min.js"><\/script>')
+</script>
+
+<script src="/js/plugin.min.js"></script>
+
+
+<script src="/js/application.js"></script>
+
+
+    <script>
+(function (window) {
+    var INSIGHT_CONFIG = {
+        TRANSLATION: {
+            POSTS: 'Posts',
+            PAGES: 'Pages',
+            CATEGORIES: 'Categories',
+            TAGS: 'Tags',
+            UNTITLED: '(Untitled)',
+        },
+        ROOT_URL: '/',
+        CONTENT_URL: '/content.json',
+    };
+    window.INSIGHT_CONFIG = INSIGHT_CONFIG;
+})(window);
+</script>
+
+<script src="/js/insight.js"></script>
+
+
+
+
+
+
+   
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+
+
+
+
+
+   
+    
+  <script src="//cdn1.lncld.net/static/js/3.0.4/av-min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/valine"></script>
+  <script type="text/javascript">
+  var GUEST = ['nick', 'mail', 'link'];
+  var meta = 'nick,mail,link';
+  meta = meta.split(',').filter(function(item) {
+    return GUEST.indexOf(item) > -1;
+  });
+  new Valine({
+    el: '#vcomments',
+    verify: false,
+    notify: false,
+    appId: 'pqPNKCepVUMmvUn3bs2eFBRQ-gzGzoHsz',
+    appKey: 'CPIqM0YktX8yI835XkAUtTh6',
+    placeholder: 'Just go go',
+    avatar: 'mm',
+    meta: meta,
+    pageSize: '10' || 10,
+    visitor: false
+  });
+  </script>
+
+     
+
+
+
+
+
+
+
+</body>
+</html>

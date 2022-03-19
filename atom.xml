@@ -1,0 +1,564 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Xiao Zongyang&#39;s Blog</title>
+  
+  
+  <link href="/atom.xml" rel="self"/>
+  
+  <link href="http://xiaozongyang.github.io/"/>
+  <updated>2022-03-05T08:19:04.631Z</updated>
+  <id>http://xiaozongyang.github.io/</id>
+  
+  <author>
+    <name>Xiao Zongyang</name>
+    
+  </author>
+  
+  <generator uri="https://hexo.io/">Hexo</generator>
+  
+  <entry>
+    <title>Windows Azure Storage: A highly Available Cloud Storage Service with Strong Consistentcy</title>
+    <link href="http://xiaozongyang.github.io/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/"/>
+    <id>http://xiaozongyang.github.io/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/</id>
+    <published>2022-02-28T03:24:10.000Z</published>
+    <updated>2022-03-05T08:19:04.631Z</updated>
+    
+    <content type="html"><![CDATA[<blockquote><p>原文地址 <a href="https://sigops.org/s/conferences/sosp/2011/current/2011-Cascais/printable/11-calder.pdf" target="_blank" rel="noopener">https://sigops.org/s/conferences/sosp/2011/current/2011-Cascais/printable/11-calder.pdf</a></p></blockquote><ol><li>数据模型：Blob（文件）、Table（结构化数据）、Queue（消息）</li><li>主要特性<ol><li>强一致性</li><li>全球维度、可扩展的命名空间：任何地区的用户都可以访问数据</li><li>灾难恢复：WAS 将数据存储在不同的数据中心中，数据中心之间相隔上百英里</li><li>多租户</li></ol></li><li>全球命名空间<ol><li>形式：<code>AccountName</code> + <code>PartitionName</code> + <code>ObjectName</code><ol><li>AccountName：用户选择的账号名，是 DNS host name 一部分，用于定位 primary storage cluster 和数据中心</li><li>PartitionName：用于定位数据在哪个节点</li><li>ObjectName：可选，用于定为数据对象</li></ol></li></ol></li><li>架构<ol><li>Storage Stamps: 存储节点集群，包含多个 rack（故障域），包含 3 层<ol><li>Stream 层：负责将数据落盘，维护副本数量（replicating），Stream即文件，由一系列有序的 chunk 组成，每个 chunk 称为 extent</li><li>Parition 层：数据访问层<ol><li>提供上层的数据抽象，如 blob, table, queue</li><li>提供对象命名空间</li><li>在 stream 层上存储对象数据（object data）</li><li>缓存数据对象减少磁盘 IO</li><li>将一个集群内的对象数据进行分区，从而实现伸缩性</li></ol></li><li>Frond-End 层：由一系列无状态服务组成，包括查找 AccountName、认证授权、路由</li></ol></li><li>Location Service：管理所有 Storage Stamps 和所有集群的 Namespace 账号<ol><li>增加 region， location, stamp</li><li>记录每个 storage stamp 的资源利用情况<img src="/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/fig-1-High-level-architecture.png" class=""></li></ol></li></ol></li><li>Replication Engines<ol><li>Intra-Stamp Replication(Stream Layer)：集群内的同步复制以确保写入数据的持久性，维护足够数量的副本，<strong>Stream 级别</strong></li><li>Inter-Stamp Replication(Partition Layer)：集群间的异步复制，用来容灾（两个集群内都有数据）或迁移数据，<strong>object 级别</strong></li></ol></li></ol><h2 id="Stream-Layer"><a href="#Stream-Layer" class="headerlink" title="Stream Layer"></a>Stream Layer</h2><ol><li>Stream Layer：为 Partition Layer 提供文件系统的命名空间和接口，但是<strong>只提供追加写语义</strong> <img src="/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/fig-2-example-stream-with-four-extents.png" class=""><ol start="2"><li>Extent：Stream 层数据复制的基本单元，由多个连续 Block 组成</li><li>Stream：<ol><li>每个 Stream 在命名空间中拥有一个命名</li><li>Stream 在 Partition 层看起来像一个大问题件</li><li>Stream 是多个 Extent 指针的有序列表</li><li>Stream 可以通过串联多个 Extent 来构造</li><li>Stream 中只有最后一个 Extent 可写，其他 Extent 只读（Sealed）</li></ol></li></ol></li><li>主要组件：StreamManager &amp; Extent Nodes<img src="/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/fig-3-stream-layer-architecture.png" class=""></li><li>StreamManager 职责<ol><li>管理元数据，即 extent 与 stream 映射关系、extent 分布信息</li><li>监控所有 EN 节点健康状况</li><li>创建 extent 并分配给 EN</li><li>当 EN 硬件故障或不可用时，进行 extent 复制</li><li>对 extent 进行 GC，回收没有任何 stream 指向的 extent</li><li>根据 stream policy 调度 EC</li></ol></li><li>StreamManager 特点<ol><li>不知道 Block 的概念，只关注 stream 和 extent</li><li>SM 不在客户端请求的关键路径上</li><li>SM 只管一个集群内的元数据，因此内存中足够保留这些信息</li></ol></li><li>Extent Node 职责：负责存储所分配的 extent</li><li>Extent Node 特点<ol><li>不知道 Stream 的概念，只知道 extent 和 block</li><li>磁盘结构：每个 extent 是一个保存数据块列表、数据块checksum 及索引（<code>extent offset -&gt; block + block file localtion</code>）</li><li>每个 EN 包含其所拥有所有 Extent 的视图，以及 extent peer 位置（SM 的缓存）</li></ol></li><li>Append &amp; Seal Extent<ol><li>Append 保证原子性</li><li>Append 允许一次写多多个 block</li><li>如果 client 调用 append 失败，应当重试或 seal extent，对于事务写通过 sequence number 去重，对于数据，RangePartition 只会指向最后一次写入，之前的写入会被 GC</li><li>Extent 具有 target size，由 Paritition Layer 指定，达到 target size 后，extent 变为 sealed（不可写）</li></ol></li><li>Stream Layer 提供的保证<ol><li>EN 向 client 返回”数据写入成功“后，之后的读操作从任何一个副本都能读到相同的数据</li><li>Extent 变为 Sealed 之后，任何一个副本数都能读到相同的数据</li></ol></li><li>复制流程（3 副本）<ol><li>创建 extent 时，会为 extent 分配 3 个副本，1 主 2 从，<strong>extent 副本主从关系和位置在 extent sealed 前不会发生变化</strong>，因此不需要 lease</li><li>client 写入到主 EN 上，由<strong>主 EN 负责</strong>将更新同步到从 EN，主 EN 职责如下<ol><li>决定 extent 的写入 offset</li><li>存在多个并发写入时，为写入排序</li><li>将写入请求转发给 2 个从副本</li><li>只有当 2 个从副本都写入成功后，才给 client 返回写入成功</li></ol></li><li>sm 分配 extent 时，副本位置信息发送给 client，因此 client 知道副本位置和主 EN 是谁</li><li>当某个副本写入失败时，client 向 SM 报告错误，SM 将现在的 extent 副本变为 sealed，并在其他 EN 上重新分配 3 个副本，将新的位置信息返回给 client，同时 SM 会创建新的副本来保证可用副本数</li></ol></li><li>Sealing<ol><li>Sealing 操作由 SM 协调，<code>commit length</code> 由 SM 决定，一旦 sealing 操作完成，<code>comit length</code> 永远不会发生变化</li><li>定 <code>commit length</code> 逻辑<ol><li>SM 询问 3 个 EN，给定 extent 的当前长度</li><li>如果 3 个 EN 返回的长度都相同，则直接用这个长度</li><li>如果 2 个 EN 长度相同，另外一个 EN 长度更长或更短，在 SM <strong>能访问</strong>的 EN 中选择<strong>最短的长度</strong>作为 <code>commit length</code>，由于不是所有副本都写入成功，主 EN 还没给 client 返回写入成功，因此不会丢数据</li><li>如果 1 个 EN 在 Sealing 阶段无法被 SM 访问，但是 Sealing 结束后恢复，SM 会强制该 EN 将 extent 同步到 <code>commit length</code></li></ol></li></ol></li><li>发生网络分区，Partition Layer 只能和 EN 通信而无法和 SM 通信，解决办法如下<ol><li>对于从已知位置读的场景，每次读都提供 offset 和 length，而 offset 和 length 是<em>之前成功的写操作返回的</em>，<strong>可以保证所有的读看到的数据相同</strong></li><li>从某个位置读到 stream 末尾的场景，只有在 partition layer load 时才会发生<ol><li>partition layer 保证，在 load 期间乜有写操作发生</li><li>load 开始时，partition server 向 EN 发送 <code>check for commit length</code> 请求，来检查所有副本是否可用以及各副本长度是否相同，如果不同则 seal extent，保证在 load 期间所有副本的读视图相同</li></ol></li></ol></li><li>为了节省成本，将 Sealed Extent 从 3 副本转为纠错码（EC），将冗余比降低到 1.3x-1.5x</li><li>读请求负载均衡<ol><li>每个读请求会携带一个 dealine，如果 EN 判断无法满足 deadline 约束就不尝试处理，直接给 client 返回结果，让 client 尝试其他 EN</li><li>在 EC 场景下，如果某个数据分片所在 EN 负载很高，处理很慢，client 可以将读请求发送到其他数据分片和编码分片所在 EN，重建出所读的数据分片</li></ol></li><li>由于 HDD 为了获得尽可能高的吞吐，通常会优先处理顺序读写，从而导致其他 IO 请求饥饿，在 WAS 通过自定义 IO 调度来保证 IO 请求公平性</li><li>EN 上会保留一块盘作为日志盘，数据写入时先将数据追加到日志盘上，然后将写数据盘的请求入队，就可以返回写入成功<ol><li>在数据搬到数据盘之前，数据缓存在内存中，读请求可以直接从内存读</li><li>减少了读写请求对数据盘的竞争，改善了写入延迟</li></ol></li></ol><h2 id="Partition-Layer"><a href="#Partition-Layer" class="headerlink" title="Partition Layer"></a>Partition Layer</h2><ol><li><p>职责</p><ol><li>为不同存储对象类型（Blob, Table, Queue）提供数据模型和语义</li><li>为存储对象提供命名空间支持</li><li>为访问存储对象提供负载均衡能力</li><li>为访问存储对象提供事务顺序和强一致性保证</li></ol></li><li><p>ObjectTable：内部数据结构</p><ol><li>动态划分成多个 RangePartition</li><li>每个 RangeParitition 是一系列连续有界的 key</li><li>不同 RangeParitition 之间的 key 没有冲地热</li><li>任何一个 key 都存在某个 RangePartition 中</li><li>ObjectTable 可以增长到 PB 级别</li></ol></li><li><p>Partition Layer 中 OT 的应用</p><ol><li>Account Table：存储每个账号的元数据和配置</li><li>Blob Table: 存储集群中所有的 blob</li><li>Entity Table：存储集群中所有的实体行，用在 Table 场景下</li><li>Message Table：存储集群中所有的消息</li><li>Schema Table：保存所有 OT 的 schema 信息</li><li>Partition Table：保存所有 OT 的 RangePartition 及其位置信息，<em>用于路由</em></li></ol></li><li><p>Blob Table, Entity Table, Message Table 的主键由 AccountName, PartitionName, ObjectName 组成，会为这 3 个字段建索引</p></li><li><p>架构</p><ol><li>Partition Manager(PM)<ol><li>负责将 OT 分割成 RangePartition</li><li>将 Partition 分配给 Partition Server(PS)，保证一个 Partition 会且只会分配给一个 PS，不同 PS 的 RangePartition 间没有重叠</li><li>保存 Partition 和 PS 之间的映射关系，维护在 Partition Map Table 中</li><li>负责 PS 之间 RangePartition 的负载均衡</li><li>同时会运行多个 PM 实例，通过 LockService 选主，主节点保持 lease</li></ol></li><li>Partition Server(PS)<ol><li>负责处理 RangePartition 上的请求</li><li>RangePartition 持久化在 stream 上，PS 中维护内存缓存</li><li>通过 LockService 保证，同一个 RangePartition 不会同时被 2 个 PS 实例维护，从而提供强一致性</li><li>一个 PS 实例可以同时为多个 OT 的 RangePartition 提供服务</li></ol></li><li>Lock Service：提供类似 Chubby 的分布式锁服务<img src="/2022/02/28/windows-azure-storage-a-highly-available-cloud-storage-service-with-strong-consistentcy/fig-4-partition-layer-architecture.png" class=""></li></ol></li><li><p>RangePartition</p><ol><li>持久化数据结构：由 Metadata Stream, Commit Log Stream, Row Data Stream, Blob Data Stream 组成，采用 LSM Tree 结构维护<ol><li>Metadata Stream：维护 RangePartition 的入口，为 PS 提供足够的信息用来载入 RangePartition，将分片分配给 PS 时即为该 PS 提供 RangePartition 的 Metadata Stream 名称</li><li>Commit Log Stream：保存最近的写操作（插入、更新、删除）的操作日志</li><li>Row Data Stream：保存 RangePartition 的 checkpoint</li><li>Blob Data Stream：仅被 Blob Table 用于存储 blob 数据</li></ol></li><li>内存数据结构：由 Memory Table, Index Cache, Row Data Cache, Bloom Filters 组成<ol><li>Memory Table: commit log 的内存缓存，缓存还未写入到 checkpoint 的内存状态</li><li>Index Cache: 保存 checkpoint 索引，checkpoint 的索引和数据分开缓存，以保证在内存中缓存尽可能多的索引</li><li>Row Data Cache: 保存 checkpoint 数据，查询时同时查 Row Data Cache 和 Memory Table，类似 LSM Tree 中的 Immutable Memory Table</li><li>Bloom Filters: 用于判断某个 key 是否在 RangePartition 中</li></ol></li></ol></li><li><p>RangePartition Load Balancing</p><ol><li>由 Load Balance, Split, Merge 3 种操作完成<ol><li>Merge: 当某个 PS 上流量太高时，将上面的部分 RangePartition 分配到到 其他 PS 上</li><li>Split: 将一个 RangePartition 分类成 2 个或多个 RangePartition，然后对分割后的 RangePartition 进行负载均衡</li><li>Merge: 将冷数据和刚加载的(lightly loaded) RangePartition 合并到一起，要求合并前的 RangePartition key 范围连续</li></ol></li><li>维护 RangePartition 总数的高、低水位，保证其数量在一定范围内<ol><li>当 RangePartition 总数到达高水位，则加快 Merge 速率</li><li>当 RangePartition 总数到达低水位，则加快 Split 速率</li></ol></li><li>PM 从每个 PS 收集每个 RangePartition 的指标，根据指标来决策是否需要对 RangePartition 进行 Split/Merge/Load Balance，收集指标包括 tps, 平均等待 tps，限流比率, CPU 利用率，请求延迟，RangePartition 数据大小</li><li>LoadBalance 动作由 PM 先给旧 PS 发送 <code>unload</code>，然后再给新分配的 PS 发送 <code>load</code> 实现</li><li>Split 决策由 PM 做出，分割的 key 范围由 PS 决定</li></ol></li><li><p>Split 操作步骤：将 RangePartition B 拆分为 (C, D)</p></li></ol><pre class="mermaid">graph TD    A[1 PM 向 PS 发送拆分命令] --> B[PS 停止对 B 的服务]    B --> C[2 PS 通过 MUltiModify 操作基于 B 的 Stream 创建 C,D 的 Stream]    C --> D[PS 将拆分后的 key 范围写入到 C,D 的 metadata stream]    D --> E[PS 为 C 和 D 提供服务]    E --> F[PS 通知 PM Split 操作完成]    F --> G[PM 更新 PartitionMapTable]    G --> H[PM 将 C,D 中的一个 Partition 分配给另一个 PS]</pre><ol start="9"><li>Merge 操作步骤：将 RangePartition C, D 合并为 E</li></ol><pre class="mermaid">graph TD    A[PM 将 C, D 移动到同一个 PS 上] --> B[PM 通知 PS 将 C,D 合并为 E]    B --> C[PS  为 C,D 生成 checkpoint]    C --> D[PS 停掉 C,D 的流量]    D --> E[PS 通过 MultiModify 操作为 E 创建新的 commit log 和 data stream,  由 C,D 的 stream 拼接而来]    E --> F[PS 为 E 构建 metadatra stream]    F --> G[PS load E 并对外提供服务]</pre><ol start="10"><li>Partition Layer 集群间副本复制（跨地域复制）<ol><li>用户的集群分为 1 主 2 备，只有主接实时流量</li><li>异步同步：主写入成功后，向 client 返回写入成功，然后向备同步更新</li></ol></li></ol><h2 id="Design-Choices-and-Lessons-Learned"><a href="#Design-Choices-and-Lessons-Learned" class="headerlink" title="Design Choices and Lessons Learned"></a>Design Choices and Lessons Learned</h2><ol><li>计算存储分离：计算和存储能够独立扩展和负载均衡、容易实现多租户</li><li>Range Parititon vs Hashing：选择基于范围分片的原因<ol><li>范围分片实现性能隔离更容易</li><li>范围分片对象分布的局部性更好，遍历效率更高</li><li>范围分片的劣势：对连续写入不友好，所有的写入都落在最后一个 RangePartition</li></ol></li><li>限流和隔离：使用 Sample-Hold 算法从历史请求中找到 top N 个最忙的 account 和 partition，判断是否需要限流</li><li>自动负载均衡<ol><li>最初使用请求延时和请求率的乘积作为负载指标，在大部分场景下能够很好公祖，但是<strong>无法发现因为扫描和网络利用率高而引起的 CPU 利用率高</strong>的问题，因此加入了 CPU 利用率，网络负载指标</li><li>上述策略处理不好<em>分区分裂</em>(split)情况，因此引入了专门的机制，即<strong>根据请求限流、超时、分区大小</strong>来决定是否需要分裂分区</li></ol></li><li>不同 RangePartition 的 Log 文件独立维护：在多租户场景下提供隔离性</li><li>日志（Journaling）：最初发布 WAS 时没有 Journaling，遇到了很多读写流量互相干扰的问题，同时也行优化小块 IO 写入，最终引入了 Journaling</li><li>Append-only System：<ol><li>收益<ol><li>简化了复制协议和故障处理</li><li>低成本地建和保存快照、提供多版本</li><li>在调查问题、恢复系统方面带来了很大收益</li></ol></li><li>代价<ol><li>GC 必须高效、可扩展</li><li>虚拟地址空间保存的数据可能磁盘布局并不相同，在大数据集的情况下需要实现预取(prefetching) 逻辑</li></ol></li></ol></li><li>End-to-End Checksum：能够有效避免写入损坏数据、发现节点硬件故障</li><li>Upgrade:<ol><li>升级域：类似故障域，多个节点组成一个升级域</li><li>存在 Y 个故障域的情况下，一次最多允许升级 1/Y 的服务器</li><li>采用滚动升级的方式来保证可用性</li><li>升级期间存储节点需要下线，停机前需要同时 PM 将 RangePartition 挪到其他 PS 上</li><li>升级期间会限制同一个升级域中最多允许失败的数目，超过限制则停止升级</li><li>升级后运行一系列测试进行验证，然后才会升级下一批机器</li></ol></li><li>同一个数据栈多种数据抽象：<ol><li>允许 Blob, Table, Queue 这些数据抽象使用相同的数据复制策略、负载均衡系统、享受 stream 层和 partition 层的改进收益</li><li>可以使用相同的硬件，从而降低成本</li></ol></li><li>使用系统定义的 Object Table：使用系统定义的 Object Table 来实现 Blob, Table, Queue 抽象而不是暴露原始的 Object Table 语义给用户，从而降低了管理维护成本，同时能够独立于用户抽象而升级内部数据结构1. 限制单个用的存储空间不超过 100TB</li></ol>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;blockquote&gt;
+&lt;p&gt;原文地址 &lt;a href=&quot;https://sigops.org/s/conferences/sosp/2011/current/2011-Cascais/printable/11-calder.pdf&quot; target=&quot;_blank&quot; rel=&quot;
+      
+    
+    </summary>
+    
+    
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+      <category term="存储" scheme="http://xiaozongyang.github.io/tags/%E5%AD%98%E5%82%A8/"/>
+    
+      <category term="paper" scheme="http://xiaozongyang.github.io/tags/paper/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>Blackbox-Exporter-Url-Probe-调研</title>
+    <link href="http://xiaozongyang.github.io/2022/01/04/Blackbox-Exporter-Url-Probe-%E8%B0%83%E7%A0%94/"/>
+    <id>http://xiaozongyang.github.io/2022/01/04/Blackbox-Exporter-Url-Probe-%E8%B0%83%E7%A0%94/</id>
+    <published>2022-01-04T04:18:52.527Z</published>
+    <updated>2022-01-04T04:18:52.528Z</updated>
+    
+    <content type="html"><![CDATA[<!-- START doctoc generated TOC please keep comment here to allow auto update --><!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE --><ul><li><a href="#%E8%83%8C%E6%99%AF">背景</a><ul><li><a href="#%E4%B8%BA%E4%BB%80%E4%B9%88%E8%A6%81%E5%81%9A%E8%BF%99%E4%B8%AA%E8%B0%83%E7%A0%94">为什么要做这个调研</a></li><li><a href="#blackbox-exporter-%E5%B7%A5%E4%BD%9C%E5%8E%9F%E7%90%86">Blackbox Exporter 工作原理</a></li></ul></li><li><a href="#%E8%B0%83%E7%A0%94%E7%9B%AE%E7%9A%84">调研目的</a></li><li><a href="#%E8%B0%83%E7%A0%94%E6%96%B9%E6%A1%88">调研方案</a></li><li><a href="#%E7%BB%93%E8%AE%BA">结论</a></li></ul><hr><p>title: Blackbox Exporter Url Probe 调研<br>date: 2021-04-14 14:28:58<br>tags:</p><ul><li>balckbox_exporter</li><li>prometheus</li><li>monitoring</li></ul><hr><h2 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h2><h3 id="为什么要做这个调研"><a href="#为什么要做这个调研" class="headerlink" title="为什么要做这个调研"></a>为什么要做这个调研</h3><p>Q2 计划做域名的拨测，需要能够对给定域名或 url 进行探活，将探活结果转换成指标收集到监控系统中。在 Prometheus 的生态中，Blackbox Exporter 是专门为了探针场景设计的，本文对使用 Blackbox_exporter 进行拨测进行可行性调研。</p><h3 id="Blackbox-Exporter-工作原理"><a href="#Blackbox-Exporter-工作原理" class="headerlink" title="Blackbox Exporter 工作原理"></a>Blackbox Exporter 工作原理</h3><p>Blackbox Exporter  是 <a href="https://prometheus.io/docs/guides/multi-target-exporter/" target="_blank" rel="noopener">Multi-Part Exporter Pattern</a>，这种模式下 Blackox Exporter 作为 同时暴露 以下两类指标。Blackbox Exporter 本身不维护需要探哪些目标，而是作为被探目标的 Proxy，由 Prometheus 主动发起抓取动作。</p><ol><li>Blackbox Exporter 自身的指标，如探针是否存活、探针任务相关指标</li><li>被探针探的 target 的指标，例如探活是否成功(<code>probe_success</code>)、探活耗时、http 探活状态码等</li></ol><h2 id="调研目的"><a href="#调研目的" class="headerlink" title="调研目的"></a>调研目的</h2><ol><li>验证 Blackbox Exporter 是否能对域名进行探活，并生成指标</li><li>验证 Blackbox Exporter 能够探测 https url</li></ol><h2 id="调研方案"><a href="#调研方案" class="headerlink" title="调研方案"></a>调研方案</h2><p>调研方案架构如下图，Blackbox Exporter 和 Prometheus 都为本地部署。</p><ol><li>Blackbox Exporter 作为 Proxy 去执行真正的探活动作并生成指标</li><li>Prometheus 为 Blackbox Exporter 配置单独的抓取任务，告诉 Blackbox Exporter 应该去探哪个 url<img src="/2022/01/04/Blackbox-Exporter-Url-Probe-%E8%B0%83%E7%A0%94/architecture.png" class="" title="[方案架构]"></li></ol><h2 id="结论"><a href="#结论" class="headerlink" title="结论"></a>结论</h2><ol><li>Blackbox Exporter 可以用任意指定的 url 进行探活，如 <code>https://baidu.com</code>，使用何种协议与指定的 <code>module</code> 有关<ol><li>Blackbox Exporter 的 <code>http_2xx</code> module 同时支持 http 和 https，不指定协议的时候默认使用 http 进行探活</li><li>Blackbox Exporter http/https 探活同时支持 <code>GET</code> 和 <code>POST</code> 两种方式，通过 <code>module</code> 参数在采集时指定</li><li>Blackbox Exporter 在探活 http 时可以指定 <code>Http Header</code>，如 <code>Origin: example.com</code></li><li>Blackbox Exporter 支持通过 http 状态码、 响应体、响应头来自定义某个 url 是否成功<ol><li>成功状态码默认为 2xx，可以通过配置修改</li><li>可以通过 <code>fail_if_body_matches_regexp</code> 和 <code>fail_if_body_not_matches_regexp</code> 来指定特定响应体才成功</li><li>可以通过 <code>fail_if_header_matches_regexp</code> 来指定 <code>fail_if_header_not_matches_regexp</code> 来执行特定响应头才成功</li></ol></li></ol></li><li>Blackbox Exporter 具备一定的 debug 能力，能够 debug 某个 url 探活失败的原因<ol><li>Blackbox Exporter 暴露 <code>probe_success</code> 来标识本次探活是否成功</li><li>Blackbox Exporter 暴露 <code>probe_failed_due_to_regex</code> 来标识探活失败的原因是否是正则匹配失败引起的，即请求返回了 2xx 但是响应头或响应体内容不如何制定的正则，可以用这个指标做报警，人工接入</li><li>Blackbox Exporter 保存了最近 100 个（数量可配置）请求和失败请求的历史，能看到请求中的 debug log，对排查问题很方便，通过 <code>http://&lt;blackbox_exporter_host&gt;:&lt;port&gt;</code> 访问即可</li></ol></li></ol>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;!-- START doctoc generated TOC please keep comment here to allow auto update --&gt;
+&lt;!-- DON&#39;T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPD
+      
+    
+    </summary>
+    
+    
+    
+  </entry>
+  
+  <entry>
+    <title>pulsar 延时消息重放时间测试</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/</id>
+    <published>2021-10-09T13:00:47.000Z</published>
+    <updated>2022-01-04T04:18:52.720Z</updated>
+    
+    <content type="html"><![CDATA[<h2 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h2><p>pulsar 将延时消息的索引保存在内存中，在 Broker 重启的时候需要将磁盘上的索引冲放到内存中来，如果重建索引的耗时过久，将会影响延时消息的时间准确性。<br>测试目的</p><ol><li>测试 Broker 重启时重建延时消息索引的时间，评估延迟是否可接受</li><li>测试影响 Broker 重建延时消息索引的因素，包括<ol><li>消息体大小</li><li>重放消息数量</li><li>Subscription 数量</li><li>Consume 数量</li></ol></li></ol><h2 id="测试方案"><a href="#测试方案" class="headerlink" title="测试方案"></a>测试方案</h2><p>在本地部署 Pulsar Standalone 进行测试，每个 case 测试 5 次，记录测试结果，测试流程如下图所示：</p><img src="/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/local-delayed-message-test-flow.jpg" class=""><ol><li>启动 Broker</li><li>启动 Producer，向测试 Topic 生产 200W 条消息，延时 1 小时</li><li>向测试 Topic 生成 16W 条消息，延时 5 分钟</li><li>Kill Broker</li><li>启动 Consumer，消费 10 条消息，记录下第一条消息的消费时间</li><li>启动 Broker</li><li>Conusmer 退出后，KIll -9 杀 Broker，转 4，直到收集到 10 个测试结果</li></ol><h3 id="测试环境及参数说明"><a href="#测试环境及参数说明" class="headerlink" title="测试环境及参数说明"></a>测试环境及参数说明</h3><ol><li>Broker 数量 1</li><li>Topic 数量 1</li><li>消息数量 200W</li><li>消息种类  延时消息</li><li>Producer 数量 16</li><li>Consumer 数量 1</li><li>单条消息大小<ol><li>100B</li><li>1KB</li><li>10KB</li></ol></li><li>测试机器 Macbook Pro 20 款<ol><li>CPU 4c 2GHz</li><li>内存 16GB</li></ol></li></ol><h2 id="测试结论"><a href="#测试结论" class="headerlink" title="测试结论"></a>测试结论</h2><p>单次消息重放的延迟如下表所示，可以得出结论</p><h3 id="基准"><a href="#基准" class="headerlink" title="基准"></a>基准</h3><p>下表为 broker 重启后消费第一条消息的耗时，作为 Broker 启动耗时的基准</p><table><thead><tr><th>次数/消息体大小/延迟(s)</th><th>100B</th><th>1KB</th><th>10KB</th></tr></thead><tbody><tr><td>1</td><td>20.897</td><td>21.266</td><td>22.3</td></tr><tr><td>2</td><td>22.634</td><td>18.350</td><td>21.592</td></tr><tr><td>3</td><td>19.401</td><td>22.194</td><td>20.199</td></tr><tr><td>4</td><td>22.501</td><td>19.882</td><td>21.795</td></tr><tr><td>5</td><td>21.313</td><td>21.904</td><td>24.051</td></tr><tr><td>6</td><td>21.233</td><td>22.187</td><td>21.835</td></tr><tr><td>7</td><td>21.232</td><td>23.313</td><td>24.541</td></tr><tr><td>8</td><td>22.695</td><td>20.459</td><td>20.21</td></tr><tr><td>9</td><td>19.793</td><td>21.845</td><td>20.858</td></tr><tr><td>10</td><td>19.642</td><td>22.579</td><td>20.925</td></tr><tr><td>min</td><td>19.401</td><td>18.35</td><td>20.199</td></tr><tr><td>max</td><td>22.695</td><td>23.313</td><td>24.541</td></tr><tr><td>avg</td><td>21.134</td><td>21.397</td><td>21.831</td></tr></tbody></table><h3 id="结论"><a href="#结论" class="headerlink" title="结论"></a>结论</h3><p>如下图所示，Broker 启动到 Consumer 消费到第一条消息的时间基本为 20s，与消息体本身的大小基本无关。</p><img src="/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/baseline.png" class=""><h3 id="Case-1-消息体大小-→-重放时间"><a href="#Case-1-消息体大小-→-重放时间" class="headerlink" title="Case 1 消息体大小 → 重放时间"></a>Case 1 消息体大小 → 重放时间</h3><table><thead><tr><th>次数/消息体大小/延迟(s)</th><th>100B</th><th>1KB</th><th>10KB</th></tr></thead><tbody><tr><td>1</td><td>56.967</td><td>64.377</td><td>78.725</td></tr><tr><td>2</td><td>58.098</td><td>65.492</td><td>87.969</td></tr><tr><td>3</td><td>59.261</td><td>67.188</td><td>71.241</td></tr><tr><td>4</td><td>62.790</td><td>78.362</td><td>82.823</td></tr><tr><td>5</td><td>55.250</td><td>62.649</td><td>78.524</td></tr><tr><td>6</td><td>56.698</td><td>66.623</td><td>86.247</td></tr><tr><td>7</td><td>57.641</td><td>63.832</td><td>77.722</td></tr><tr><td>8</td><td>63.726</td><td>63.275</td><td>85.135</td></tr><tr><td>9</td><td>57.045</td><td>62.898</td><td>88.610</td></tr><tr><td>10</td><td>59.613</td><td>64.909</td><td>84.985</td></tr><tr><td>min</td><td>55.256</td><td>2.649</td><td>71.241</td></tr><tr><td>max</td><td>63.726</td><td>78.362</td><td>88.61</td></tr><tr><td>avg</td><td>58.708</td><td>965.9605</td><td>82.1981</td></tr></tbody></table><h4 id="结论-1"><a href="#结论-1" class="headerlink" title="结论"></a>结论</h4><p>如下图所示，重放 2M 延时消息的耗时约为 40 ~ 60 s（减掉基准启动时间之后），随消息体大小增加而增加。</p><img src="/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/case1.png" class=""><h3 id="Case-2-重放消息数量-→-重放时间"><a href="#Case-2-重放消息数量-→-重放时间" class="headerlink" title="Case 2 重放消息数量 → 重放时间"></a>Case 2 重放消息数量 → 重放时间</h3><table><thead><tr><th>次数/消息数量/延迟(s)</th><th>2M</th><th>5M</th><th>10M</th></tr></thead><tbody><tr><td>1</td><td>56.967</td><td>129.301</td><td>199.07</td></tr><tr><td>2</td><td>58.098</td><td>148.14</td><td>186.66</td></tr><tr><td>3</td><td>59.261</td><td>110.748</td><td>201.107</td></tr><tr><td>4</td><td>62.79</td><td>109.004</td><td>190.389</td></tr><tr><td>5</td><td>55.25</td><td>124.509</td><td>181.921</td></tr><tr><td>6</td><td>56.698</td><td>108.119</td><td>183.779</td></tr><tr><td>7</td><td>57.641</td><td>106.763</td><td>193.303</td></tr><tr><td>8</td><td>63.726</td><td>124.127</td><td>186.575</td></tr><tr><td>9</td><td>57.045</td><td>107.763</td><td>184.699</td></tr><tr><td>10</td><td>59.613</td><td>106.83</td><td>185.984</td></tr><tr><td>min</td><td>55.25</td><td>106.763</td><td>181.921</td></tr><tr><td>max</td><td>63.726</td><td>148.14</td><td>201.107</td></tr><tr><td>avg</td><td>58.7089</td><td>117.5304</td><td>189.3487</td></tr></tbody></table><p>如下图，随着重放消息数量增长，耗时线性增长，重放消息量越大耗时越久</p><img src="/2021/10/09/testing-of-pulsar-delay-message-replay-on-restart/case2.png" class="">]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;h2 id=&quot;背景&quot;&gt;&lt;a href=&quot;#背景&quot; class=&quot;headerlink&quot; title=&quot;背景&quot;&gt;&lt;/a&gt;背景&lt;/h2&gt;&lt;p&gt;pulsar 将延时消息的索引保存在内存中，在 Broker 重启的时候需要将磁盘上的索引冲放到内存中来，如果重建索引的耗时过久，将会影响延
+      
+    
+    </summary>
+    
+    
+    
+      <category term="mq" scheme="http://xiaozongyang.github.io/tags/mq/"/>
+    
+      <category term="pulsar" scheme="http://xiaozongyang.github.io/tags/pulsar/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>从分布式存储系统的角度看 MQ</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/distributed-storage-system-view-on-mq/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/distributed-storage-system-view-on-mq/</id>
+    <published>2021-10-09T12:50:24.000Z</published>
+    <updated>2022-01-04T04:18:52.529Z</updated>
+    
+    <content type="html"><![CDATA[<p>最近读了杨传辉老师的《大规模分布式存储系统：原理解析与架构实战》，这本书从数据分布、负载均衡、容错、弹性伸缩等角度讨论了分布式存储系统在解决这些问题上的常见设计和实践。本文尝试从这个角度总结下 RocketMQ 和 Pulsar 两款 MQ 产品 解决这些问题时的做法。</p><p>文中的结论主要是通过阅读相关的文档（见参考）和分析源码(pulsar f9057c7, rocketMQ aaa92a2) 得出，如果错误、不准确之处欢迎各位读者指正，欢迎大家讨论交流。</p><h2 id="分布式存储系统关注哪些问题"><a href="#分布式存储系统关注哪些问题" class="headerlink" title="分布式存储系统关注哪些问题"></a>分布式存储系统关注哪些问题</h2><ol><li>数据分布：数据如何分布、客户端请求如何路由到正确的worker 节点</li><li>数据同步：如何保证多副本</li><li>负载均衡：如何分发请求从而保证保证节点之间负载均衡</li><li>弹性伸缩：能否支持自动扩缩容</li><li>容错<ol><li>错误感知</li><li>错误恢复</li></ol></li></ol><h2 id="RocketMQ"><a href="#RocketMQ" class="headerlink" title="RocketMQ"></a>RocketMQ</h2><ol><li><p>数据模型，如下图所示</p><ol><li><p>message 从属于 topic</p></li><li><p>topic 由一个或多个 Broker 负责存储</p></li><li><p>topic 内部分逻辑 queue</p></li><li><p>不考虑主备的情况下，同一个 topic 的 queue 可以分布在不同的 broker 上</p> <img src="/2021/10/09/distributed-storage-system-view-on-mq/rocketmq-design.png" class=""></li></ol></li><li><p>数据分布</p><ol><li>按 queue 粒度进行数据分布</li><li>消息生产和消费的最小粒度是 queue<ol><li>一个 queue 同时只能分给一个 consumer</li><li>一个 consumer 可以同时消费多个 queue</li></ol></li><li>queue 的创建和生成可以自动或人工操作，元数据存在 NameServer 中</li></ol></li><li><p>数据同步</p><ol><li>HAServer: Master 上运行一个后台任务，定时向 slave 推 commit log</li><li>Dledger：通过 raft 同步 commit log</li></ol></li><li><p>数据路由：客户端生产或消费前，需要先从 NameServer 获取 topic 对应 Broker 的路由信息</p></li><li><p>负载均衡：不支持 queue 的动态增加、减少、分裂、合并</p><ol><li>生产：如果不指定 queueId 和路由 key，RoundRobin 到备选 queue 中，即不同的 Producer 可以并发生产到同一个 queue 中</li><li>消费：同一个 group 的 consumer，分配所有的 queue，每个 consumer 独占一个 queue</li></ol></li><li><p>弹性伸缩：不支持自动扩容、缩容</p><ol><li>加入结点后，需要指定 master-slave 关系、指定 topic(queue)-broker 的分布关系</li></ol></li><li><p>容错</p><ol><li>错误感知<ol><li>NameServer 向 Broker 发心跳，能够感知 Broker 不可用，及时更新路由表信息</li><li>Master Broker 定时向 Slave Broker 发心跳，能感知到 Broker 不可用</li><li>Producer/Client 定时向所关心的所有 Broker 发心跳，能感知到 Broker 不可以</li></ol></li><li>错误恢复<ol><li>不支持自动的主从切换，有运维命令一键切(需要停写)</li><li>支持把 topic 的部分 queue 迁移到可用的 Broker 上，但是不迁移历史数据、期间可能会丢数据</li></ol></li></ol></li></ol><h2 id="Pulsar"><a href="#Pulsar" class="headerlink" title="Pulsar"></a>Pulsar</h2><ol><li><p>数据模型，如下图所示，这里只讨论持久化消息</p><ol><li><p>message 从属于 topic</p></li><li><p>topic 下包含一个或多个 partition</p></li><li><p>partition 内部分 segment</p></li><li><p>paritition 是生产和消费的最小单位</p></li><li><p>segment 是数据迁移、多副本备份的基本单位 </p> <img src="/2021/10/09/distributed-storage-system-view-on-mq/pulsar-design.webp" class=""></li></ol></li><li><p>数据分布</p><ol><li>不同 topic 的消息：不同 topic 的消息分散到不同的 ManagedLedger 中，在 zk 中保存了 topic 和 ManagedLedger 的映射关系</li><li>同一个 topic 下的消息<ol><li>如果 topic 含有多个 partition，则每个 partition 的消息互相独立生产、存储、消费</li><li>同一个 partition 下的消息，分成多个 segment 存储<ol><li>同一个 partition segment 存在一组 bookie 中</li><li>同一个 segment 具有多个副本，分布在同一组 bookie 中</li></ol></li></ol></li></ol></li><li><p>数据同步：采用 NWR 协议进行多副本同步</p><ol><li>broker 写存储时，并行写 W 份</li><li>broker 读存储时，并行读 R 份</li><li>同一时刻只能有一个 Broker 写存储</li></ol></li><li><p>负载均衡</p><ol><li>生产：默认情况下，RoundRobin 到该 topic 的不同 partition，即多个 Producer 可以往同一个 Paritition 并发生产消息</li><li>消费：同一个 Subscription 下的 Consumer 之间进行所以 partition 的负载均衡<ol><li>一个 paritition 可以同时（在 Shared 订阅模式下）被多个 Consumer 消费，一个 consumer 也可以同时订阅同一个 topic 下的多个 partition，即 partition 和 consumer 的关系是 <em>M-to-N</em></li><li>同一个 paritition 能服务的 consumer 数量可以由配置项控制</li></ol></li></ol></li><li><p>弹性伸缩：计算层（broker）和存储层（Bookkeeper）可以独立弹性伸缩</p><ol><li>计算层：一个 topic 只能由一个 broker 读写，因此如果计算能力跟不上，可以通过加计算节点的方式让 topic 分配到新增的 broker 上，减轻单个 broker 上的负载压力，实现 topic 粒度的负载均衡</li><li>存储层：整个存储集群是一个 bookie 池，增加存储节点记为增加池子的负载上限</li></ol></li><li><p>容错</p><ol><li>每条消息生产时被复制到多个 bookie 节点上，并且由存储集群保证可用副本数<ol><li>如果 bookie 节点故障，存储集群可以自动做数据迁移，保证可用副本数</li><li>如果 NWR 参数有调整，存储集群自动从老街店复制数据副本</li></ol></li><li>计算层无状态，如果 broker 故障，则会将该 broker 上的 topic 迁移到其他 broker 上<ol><li>迁移过程只是 topic-broker 映射关系元数据的变更，<strong>不迁移数据</strong></li><li>broker 故障转移时需要 fencing</li></ol></li><li>存储层：Bookkeeper 集群能保证 N 的数量，即读写备选结点数量，如果有备选结点故障会从集群中挑选可用结点替换故障结点</li></ol></li></ol><h2 id="参考"><a href="#参考" class="headerlink" title="参考"></a>参考</h2><ol><li>RocketMQ 设计文档 <a href="https://github.com/apache/rocketmq/blob/master/docs/cn/design.md" target="_blank" rel="noopener">https://github.com/apache/rocketmq/blob/master/docs/cn/design.md</a></li><li>「分布式系统前沿技术」专题 | Pulsar 的设计哲学 <a href="https://mp.weixin.qq.com/s/13sd3aR0LdkG-H6094r_Iw" target="_blank" rel="noopener">https://mp.weixin.qq.com/s/13sd3aR0LdkG-H6094r_Iw</a></li><li>Apache BookKeeper 简介 <a href="https://mp.weixin.qq.com/s/BOuF5_MAzw77kPsN9BbCcg" target="_blank" rel="noopener">https://mp.weixin.qq.com/s/BOuF5_MAzw77kPsN9BbCcg</a></li><li>Pulsar 的消息存储机制和 Bookie 的 GC 机制原理 <a href="https://mp.weixin.qq.com/s/3jmExKsfPVJo9NLzekMKxQ" target="_blank" rel="noopener">https://mp.weixin.qq.com/s/3jmExKsfPVJo9NLzekMKxQ</a></li></ol>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;p&gt;最近读了杨传辉老师的《大规模分布式存储系统：原理解析与架构实战》，这本书从数据分布、负载均衡、容错、弹性伸缩等角度讨论了分布式存储系统在解决这些问题上的常见设计和实践。本文尝试从这个角度总结下 RocketMQ 和 Pulsar 两款 MQ 产品 解决这些问题时的做法。&lt;/
+      
+    
+    </summary>
+    
+    
+    
+      <category term="mq" scheme="http://xiaozongyang.github.io/tags/mq/"/>
+    
+      <category term="Pulsar" scheme="http://xiaozongyang.github.io/tags/pulsar/"/>
+    
+      <category term="RocketMQ" scheme="http://xiaozongyang.github.io/tags/rocketmq/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>第 17 章 - 高级进程间通信</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/17-advanced-ipc/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/17-advanced-ipc/</id>
+    <published>2021-10-09T10:22:31.000Z</published>
+    <updated>2022-01-04T04:18:52.514Z</updated>
+    
+    <content type="html"><![CDATA[<ol><li>UNIX Domain Socket：用在<strong>同一台计算机</strong>上运行的<strong>进程之间的通信</strong>，比网络 socket 通信效率高，<em>仅复制数据不执行协议处理</em><ol><li>一对相互连接的 unix domain socket 起到<strong>全双工</strong>管道的作用，两端对读写开放</li></ol></li><li><code>socketpair</code> 创建相互连接的套接字，且创建的套接字<strong>没有名字</strong></li><li>命名 socket，通过 <code>socket</code> 函数创建 socket，然后 <code>bind</code> 到某个路径上</li><li>传送 fd：使一个进程能够处理打开一个文件所做的一切操作以及<strong>向调用进程送回一个描述符</strong>，该描述符用于以后的所有 IO 函数<ol><li>两个进程，共享同一个 v 结点，但是有个自己的文件表项<img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/17-advanced-ipc/BDA762A2-2EE9-4CB8-90FD-236D40D28C5F.png" class=""></li></ol></li><li><code>send_fd</code>/<code>recv_fd</code> 发送/接收 fd</li></ol>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;ol&gt;
+&lt;li&gt;UNIX Domain Socket：用在&lt;strong&gt;同一台计算机&lt;/strong&gt;上运行的&lt;strong&gt;进程之间的通信&lt;/strong&gt;，比网络 socket 通信效率高，&lt;em&gt;仅复制数据不执行协议处理&lt;/em&gt;&lt;ol&gt;
+&lt;li&gt;一对相互连接的 uni
+      
+    
+    </summary>
+    
+    
+    
+      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
+    
+      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>第 16 章 - 网络 IPC：套接字</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/16-network-ipc-sockets/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/16-network-ipc-sockets/</id>
+    <published>2021-10-09T10:22:29.000Z</published>
+    <updated>2022-01-04T04:18:52.514Z</updated>
+    
+    <content type="html"><![CDATA[<ol><li>socket 统一的接口既可以用于计算机间通信，也可以用于计算机内通信</li><li>socket descripter 应用程序用来访问套接字，在 unix 下为 fd</li><li>socket 相关的操作<ol><li><code>int socket(domain, int type, int protocol)</code> 创建 socket<ol><li>domain 决定通信特性，包括 <code>AF_INET</code>, <code>AF_INET6</code>， <code>AF_UNIX</code> （网络层 ip 还是 unix 文件）</li><li>type 进一步决定通信特性，包括 <code>SOCK_DGRAM</code>, <code>SOCK_RAW</code>, <code>SOCK_SEQPACKET</code>, <code>SOCK_STREAM</code> （传输层, udp / 原始ip / tcp）</li><li>protocol 选择网络协议，<code>0</code> 表示选择默认协议</li><li>数据报(SOCK_DGRAM 接口，UDP)不需要逻辑连接，字节流（SOCK_STREAM 接口, TCP）需要逻辑连接，可靠报文服务（SOCK_SEQPACKET, SCTP）需要逻辑连接</li></ol></li><li><code>shutdown</code> 关闭 socket，可以选择关闭读端还是写端（双工通道）</li><li>网络协议定义了字节序，socket 头文件提供了相关的函数，将本地主机的 int 转为网络协议 int（TCP 是大端字节序）</li></ol></li><li>绑定：将 socket fd 与地址关联，<strong>一般只有 server 需要显式调用 bind，client 调用 connet 时会绑定到随机地址上</strong><ol><li>指定的地址必须有效，不能指定指定其他机器的地址</li><li>地址必须和创建 socket 的地址族支持的格式相匹配</li><li>地址中的端口号不小于 1024，除非是特权进程</li><li>一个 socket 端点一般只能绑定到一个地址上</li></ol></li><li>连接(connect)：与给定地址建立连接，如果没有绑定地址，会绑定到本机随机端口，<em>connect 失败需要关闭 socket</em></li><li>监听（listen）：宣告愿意接受连接请求，指定 backlog（未完成连接器请求数量）</li><li>accept：获得连接请求并建立连接，accept 返回的 fd 是 socket fd（用于调用客户端），原始的 fd 继续接受其他连接请求<ol><li>可以设置为非阻塞模式，没有连接请求到来时 accepet 返回 -1, errno 设置为 EAGAIN 或 EWOULDBLOCK</li></ol></li></ol>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;ol&gt;
+&lt;li&gt;socket 统一的接口既可以用于计算机间通信，也可以用于计算机内通信&lt;/li&gt;
+&lt;li&gt;socket descripter 应用程序用来访问套接字，在 unix 下为 fd&lt;/li&gt;
+&lt;li&gt;socket 相关的操作&lt;ol&gt;
+&lt;li&gt;&lt;code&gt;int soc
+      
+    
+    </summary>
+    
+    
+    
+      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
+    
+      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>第 15 章 - 进程间通信</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/15-interprocess-communication/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/15-interprocess-communication/</id>
+    <published>2021-10-09T10:22:28.000Z</published>
+    <updated>2022-01-04T04:18:52.511Z</updated>
+    
+    <content type="html"><![CDATA[<ol><li>UNIX IPC 摘要<blockquote><p>UDS(Unix Domain Socket)</p> <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/15-interprocess-communication/D7893677-92B4-4EF7-BC24-7DCF46ED7189.png" class=""></blockquote></li></ol><h2 id="管道"><a href="#管道" class="headerlink" title="管道"></a>管道</h2><ol><li>管道的限制<ol><li>历史上是半双工的，处于兼容性考虑，不应该作出支持全双工的假设</li><li>只能在具有公共祖先的两个进程间使用</li></ol></li><li>管道的操作<ol><li>创建管道 <code>int pipe(int fd[2]);</code> 由<strong>参数返回</strong>两个 fd<ul><li><code>fd[0]</code>用于读</li><li><code>fd[1]</code>用于写</li><li><code>fd[1]</code> 的输出是 <code>fd[0]</code> 的输入</li></ul></li><li>fstat 测试管道</li></ol></li><li>进程与管道的示意图<ol><li>单进程 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/15-interprocess-communication/D22F337E-E294-4E93-BC00-2BDC6D38F6E5.png" class=""></li><li>父、子进程，先调用 pipe 再调用 fork，然后关闭部分 fd 达到想要的数据流向 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/15-interprocess-communication/8CDF3BE9-20A5-4FB8-B062-9EBBE3D54482.png" class=""> <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/15-interprocess-communication/E1B04A6B-F2AB-44AC-95C1-925AFB1F9C47.png" class=""></li></ol></li><li>可以用两个管道做父、子进程同步，实现 <code>TELL_WAIT</code>/ <code>TELL_PARENT</code> / <code>TELL_CHILD</code> / <code>WAIT_PRENT</code> / <code>WAIT_CHILD</code>，read 操作阻塞，write 唤醒</li></ol><h2 id="协同进程"><a href="#协同进程" class="headerlink" title="协同进程"></a>协同进程</h2><ol><li>协同进程：通常在 shell 后台运行，其标准输入和标准输出通过管道连接到另一个程序</li></ol><h2 id="命名管道-FIFO"><a href="#命名管道-FIFO" class="headerlink" title="命名管道 FIFO"></a>命名管道 FIFO</h2><ol><li>为什么需要命名管道：因为匿名管道只能在两个相关的进程间使用，并且这两个相关的进程还必须有一个公共祖先进程，<strong>而FIFO 可以使不同的进程之间交互数据</strong></li><li>如何使用<ol><li>创建: <code>int mkfifo(const char *path, mode_t mode)</code>：mode 与 open 的 mode 相同，创建成功返回 0，否则返回 -1</li><li>创建之后需要用 <code>open</code> 打开<ol><li><code>O_NONBLOCK</code> 标志的影响<ol><li>没有指定 <code>O_NONBLOCK</code> 的时候，只读 open 要阻塞到某个进程为写打开一个 FIFO 为止，只写 open 阻塞到某个进程为读打开一个 FIFO 为止</li><li>如果指定了 <code>O_NONBLOCK</code>，并且此时没有进程为写打开 FIFO，只读 open 会立即返回 -1，并将 errno 设置为 <code>ENXIO</code></li></ol></li></ol></li></ol></li><li>用途<ol><li>shell 命令使用 FIFO 将数据从一条管道传递到另一条时，无需创建中间临时文件 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/15-interprocess-communication/EAE51746-BAC1-48AA-8187-9CD7BE9F38CE.png" class=""></li><li>客户进程-服务器进程应用程序中，FIFO 用作汇聚点，在客户进程和服务器进程之间传递数据 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/15-interprocess-communication/1784D2DD-B991-463C-8EC8-62B24BEA1E25.png" class=""></li></ol></li></ol><h2 id="XSI-IPC"><a href="#XSI-IPC" class="headerlink" title="XSI IPC"></a>XSI IPC</h2><ol><li>内核 IPC 结构：消息队列、信号量、共性存储器</li><li>每个内核中的 IPC 结构用一个非负正数 id 引用<ol><li>如向一个消息队列发消息，只用知道其队列 id</li><li>消息队列创建再删除，相关 id 连续加 1，直至 int 最大值，然后 reset 到 0</li></ol></li><li>IPC 结构外部命名：使多个合作进程能在同一个 IPC 结构上汇聚，即需要提供一个 key<ol><li>实现方式<ol><li>服务器进程指定 key IPC_PRIVATE 创建一个新 IPC 结构，所返回的标识符可供 fork 出的子进程使用，子进程又可将此标识符作为 exec 的一个参数传给新程序</li><li>在公共头文件中定义 client/server 公认的 key，然后 server 以此 key 创建一个 IPC 结构用以通信</li><li>client 和 server 认同一个路径名和项目 id（0-255 间的字符），然后使用 ftok 然后将这两个值变为一个 key，然后用 2 中的方法使用该 key</li></ol></li></ol></li><li>IPC 的问题<ol><li>创建 IPC 的进程退出后，IPC 结构（如消息队列）不会删除、IPC 中的数据也不会删除</li></ol></li><li>IPC 不用 fd，因此不能使用 IO 多路复用</li><li>消息队列：存储在内核中的消息链表，支持先进先出和按消息的类型字段取消息<ol><li>每个队列都有一个 msqid_ds 结构，包含了权限、消息数、队列最大长度(byte)</li><li>操作<ol><li><code>msgsnd</code> 发消息</li><li><code>msgrcv</code> 接收消息</li><li><code>msgctl</code> 获取 msqid_ds 结构/设置权限或队列祖达长度/删除队列及队列中的消息</li></ol></li></ol></li><li>信号量：计数器，用于为多个进提供对共享数据对象的访问<ol><li>访问共享数据前需要获得信号量，如果获取失败，则被阻塞；使用完需要释放信号量</li><li>操作<ol><li><code>semget</code> 使用 XSI 信号量前需要先获得一个信号量 ID，如果是新创建需要指定信号量数，否则指定为 0</li><li><code>semctl</code> 操作信号量，包括获取信号量状态、设置权限、删除信号量、获取 semval、设置 semval、获取 pid、获取 semncnt、获取 senzcnt、获取所有信号量的值、设置所有信号量的值</li><li><code>semop</code> 自动执行信号量集合上的操作数组，提供原子性保</li></ol></li></ol></li><li>共享存储：允许两个或多个进程共享（同步访问）一个给定的存储区<ol><li>内核为每个共享存储段维护一个数据结构，包括访问权限、段大小（byte）、创建进程的 pid、上次操作共享存储的 pid、当前共享存储段 attach 技术、last-attach time、last-detach time、last-change time</li><li>操作<ol><li><code>shmget</code> 创建新的或引用现有的共享存储段</li><li><code>shmctl</code> 操作共享存储段，包括获取 shmid_ds 结构、设置权限或 uid/gid、删除共享存储段</li><li>SHM_LOCK/SHM_UNLOCK 对共享存储段加锁/解锁，只有特权用户可以，不是 Single UNIX Specification 定义的</li><li><code>shmat</code> 将共享存储段连接（attach）到调用进程的某个地址上，可以通过参数指定由内核指定地址还是用户进程指定地址</li><li><code>shmdt</code> 讲共享存储段与调用进程的地址分离(detach)，并不会删除共享存储段</li></ol></li><li>使用 mmap + /dev/zero 的方式可以在相关联的进程之间实现共产存储段类似的效果</li></ol></li><li>POSIX 信号量：简化了 XSI 信号量的接口，优化了删除时的行为，POSIX 信号量删除后仍然可以正常工作，直到该信号量的最后一次引用被释放<ol><li>匿名信号量：只在内存中存在，要求使用信号量的进程必须可以访问内存</li></ol></li></ol>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;ol&gt;
+&lt;li&gt;UNIX IPC 摘要&lt;blockquote&gt;
+&lt;p&gt;UDS(Unix Domain Socket)&lt;/p&gt;
+ &lt;img src=&quot;/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/15-inter
+      
+    
+    </summary>
+    
+    
+    
+      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
+    
+      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>第 14 章 - 高级 IO</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/</id>
+    <published>2021-10-09T10:22:27.000Z</published>
+    <updated>2022-01-04T04:18:52.505Z</updated>
+    
+    <content type="html"><![CDATA[<ol><li>非阻塞 IO：调用时不会阻塞调用方，而是立即返回，并将 errno 设置为 <code>EAGIN</code><ol><li>将 fd 指定为非阻塞 IO 的方法<ol><li>使用 <code>O_NONBLOCK</code> 标志打开</li><li>通过 <code>fcntl</code> 打开</li></ol></li><li>轮询：多次循环尝试同一个 IO 动作，如果失败不阻塞</li></ol></li><li>记录锁(byte-range locking)：保证一个进程<strong>单独写</strong>一个文件的部分数据，对文件中的部分区域加锁<ol><li><code>int fctnl(int fd, int cmd, ... /* struct flock *flockptr */);</code> <ol><li>cmd 为 <code>F_GETLK</code> / <code>F_SETLK</code> / <code>F_SETLKW</code><ol><li>F_GETLK 判断由 flockptr 描述的锁是否会被另外一把锁排斥，即判断当前锁能不能加上，如果能加上保持 flock 结构不变，否则设置为排斥当前锁的信息</li><li>F_SETLK 设置有 flockptr 描述的锁，如果该出差会立即返回，errno 为 EACCESS 或 EAGAIN</li><li>F_SETLKW  F_SETLK 的阻塞版本，如果加锁失败则调用方被阻塞，如过锁可用，则被唤醒</li></ol></li><li>flock 结构<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">flock</span> &#123;</span></span><br><span class="line">    short l_type; <span class="comment">/* F_RDLCK, F_WRLCK, FUNLCK */</span></span><br><span class="line">    short l_whence; <span class="comment">/* SEEK_SET, SEEK_CUR, SEEK_END */</span></span><br><span class="line">    <span class="keyword">off_t</span> l_start; <span class="comment">/* offset in bytes, relative to l_whence */</span></span><br><span class="line">    <span class="keyword">off_t</span> l_len; <span class="comment">/* length, in bytes; 0 menas lock to EOF */</span></span><br><span class="line">    <span class="keyword">pid_t</span> l_pid; <span class="comment">/* pid of which process acquired the lock, returned with F_GETLK */</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure></li><li>设置或释放文件上的锁时，系统按要求合并或分裂相邻区，如下图 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/1328CBAC-63D2-4EE2-9C36-AB968C0783A2.png" class=""></li><li>锁的隐含继承和释放<ol><li>锁与进程和文件两者相关联<ul><li>进程终止时，它锁简历的锁全部释放</li><li>无论一个 fd 何时关闭，改进程通过这个 fd 引用的文件上的<strong>任何</strong>一把锁都会释放<ul><li>同一个文件打开多次，close 一次锁全部释放</li><li>如果fd1 通过 dup 复制出 fd2，close 任意一个 fd，都会释放文件上的锁</li></ul></li></ul></li><li>子进程<strong>不会继承</strong>父进程的文件锁，只会继承 fd，如果子进程需要加锁，需要另外通过 fcntl 加锁</li><li>执行 exec 后，新程序继承原程序的锁（同一个进程，pid 并没有发生变化） <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/E38D6CDB-A173-4D6F-8371-6EDC7474C744.png" class=""></li></ol></li><li>在文件尾端上加锁时要非常小心，因为大多数实现根据 l_whence 和 l_start 计算出的绝对偏移量，如下图 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/91248A6F-B85D-4600-A61F-6F591074D87C.png" class=""> <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/5F497FD4-41FF-47D6-A2DD-BD8A50426FB4.png" class=""></li><li>建议性锁 &amp; 强制性锁<ol><li>建议性锁：使用相同的库函数或者实现方式才生效的加锁实现（例如其他有写权限的进程没用就可以在有锁的时候继续写）</li><li>强制性锁：OS kernel 保证锁实现有效</li></ol></li></ol></li></ol></li></ol><h2 id="IO-多路复用"><a href="#IO-多路复用" class="headerlink" title="IO 多路复用"></a>IO 多路复用</h2><ol><li>动机：一个进程处理多个 fd，轮询感兴趣的 fd</li><li>工作流程<pre class="mermaid">graph LRstart((start)) --> A[构造感兴趣 fd 列表]A --> B[注册 A 中的 fd 列表]B --> C[检查任一 fd 就绪]C --> D[处理就绪 fd, 进行 IO]D --> B</pre></li><li><code>int select(int maxfdp1, fd_set *restrict readfds, fd_set *restrict writefds, fd_set *restrict exceptfds, struct timeval *restrict tvptr)</code> 告诉内核关心哪些 fd 的那些状态（可读、可写、异常），返回已就绪的 fd 总数量、哪些 fd 已就绪<ol><li>参数<ol><li>tvptr 超时时间，分下列几种情况<ol><li><code>tvptr == NULL</code> 永远等待，除非被信号中断</li><li><code>tvptr-&gt;tv_sec == 0 &amp;&amp; tvptr-&gt;tv_usec == 0</code> 不等待，立即返回</li><li><code>tvptr-&gt;tv_sec != 0 || tvptr-&gt;tv_usec != 0</code> 等待指定时长，到时间或有 fd 就绪则返回</li></ol></li><li>readfds/writefds/writefds： fd 集合指针，每个 fd 维护一个 bit</li><li>maxfdp1: <code>max fd + 1</code>，最大的 fd 编号 + 1，最大值通常为 1024</li></ol></li><li>返回值<ol><li><code>-1</code>：出错，例如没有 fd ready 是收到信号</li><li><code>0</code>：没有 fd 就绪</li><li><code>&gt; 0</code>：就绪 fd 数量，如果一个 fd 读写都就绪，则会被计数两次</li></ol></li></ol></li><li><code>int poll(struct pollfd fdarray[], nfds_t nfds, int timeout)</code> 类似 select，用来检查感兴趣的 fd 是否就绪<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">pollfd</span> &#123;</span></span><br><span class="line">    <span class="keyword">int</span> fd; <span class="comment">/* file sescriptor to check, or &lt; 0 to ingore */</span></span><br><span class="line">    short events; <span class="comment">/* events of interest on fd */</span></span><br><span class="line">    short revents; <span class="comment">/* events that occurred on fd */</span></span><br><span class="line">&#125;;</span><br></pre></td></tr></table></figure></li><li>select vs poll<ol><li>select fd 数量一般有上限限制，而 poll 没有</li><li>select 会修改传入的 fd_set，而 poll 不会修改 events，因此 select 每次调用前都需要重新设置 fd_set，二 poll 不需要重新设置 events</li><li>select 和 poll 都不受 fd 是否阻塞影响</li><li>select 和 poll 都会被信号中断</li></ol></li></ol><h2 id="异步-IO"><a href="#异步-IO" class="headerlink" title="异步 IO"></a>异步 IO</h2><ol><li>POSIX AIO 的问题<ol><li>每个异步操作有 3 处可能产生错误的地方<ol><li>操作提交</li><li>操作本身的结果</li><li>决定异步操作状态的函数</li></ol></li><li>涉及大量的额外设置和处理规则</li><li>错误恢复很难</li></ol></li><li>AIO 的 io 请求加入操作系统 IO 队列就返回成功，在 IO 操作完成之前需要保证缓冲区稳定</li></ol><h2 id="散布读-scatter-read-amp-聚集写-gather-write"><a href="#散布读-scatter-read-amp-聚集写-gather-write" class="headerlink" title="散布读(scatter read) &amp; 聚集写(gather write)"></a>散布读(scatter read) &amp; 聚集写(gather write)</h2><ol><li><code>readv</code> 从一个 fd 中将数据读到多个 buffer 中，先填满一个 buffer 再填下一个</li><li><code>writev</code> 将多个 buffer 的数据写入到一个 fd 中</li><li>readv/writev 需要指定每个 buffer 的起始地址和长度 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/EBDAF9BC-428B-44A2-987C-7F022E539642.png" class=""></li><li>好处：能够减少系统调用次数</li></ol><h2 id="readn-amp-writen"><a href="#readn-amp-writen" class="headerlink" title="readn &amp; writen"></a>readn &amp; writen</h2><ol><li>背景：管道、FIFO、网络设备有下面两种性质，导致需要多次调用 read/write<ol><li>一次 read 操作返回的数据少于要求的数据</li><li>一次 write 操作的返回值少于指定输出字节数</li></ol></li></ol><h2 id="存储映射-memory-mapped-IO"><a href="#存储映射-memory-mapped-IO" class="headerlink" title="存储映射(memory-mapped) IO"></a>存储映射(memory-mapped) IO</h2><ol><li>Memory-mapped IO：将磁盘文件存储空间的一个缓冲区上，通过读写内存 buffer 的方式读写文件，而不用使用 read/write，映射区域位于堆栈之间</li><li>映射区域保护要求，不能超过文件 open 模式访问权限<ol><li>PROT_READ 可读</li><li>PROT_WRITE 可写</li><li>PROT_EXEC 可执行</li><li>PROY_NONE 不可访问</li></ol></li><li>存储区映射方式<ol><li>MAP_FIXED 返回值必须等于 addr 参数</li><li>MAP_SHARED 指定存储操作修改映射文件，即存储操作相等于对该文件的 write，由内核觉得何时写回脏页</li><li>MAP_PRIVATE 对存储区的操作导致<strong>创建该映射文件的一个副本</strong>，后续的引用都引用该副本</li></ol></li><li>示意图 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/14-advanced-io/4219B0DF-E7B2-48EB-872F-970C204DE5B6.png" class=""></li><li>mmap 时的 addr 和 offset  需要和虚拟存储页长度对齐（即是page size 的整数倍）<ol><li>如 page size 是 512B，映射 100B 的文件，也会提供 512B 的映射区</li><li>操作映射文件长度之外的内存区域不会反映在文件上，而是需要先增加文件长度</li></ol></li><li>mmap 相关的信号<ol><li><code>SIGSEGV</code> 试图写只读的映射区</li><li><code>SIGBUS</code> 试图访问已截断的映射区</li></ol></li><li>mmap 与子进程<ol><li>fork 出的子进程继承父进程的存储映射区</li><li>exec 切换执行程序后，不继承存储映射区</li></ol></li></ol>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;ol&gt;
+&lt;li&gt;非阻塞 IO：调用时不会阻塞调用方，而是立即返回，并将 errno 设置为 &lt;code&gt;EAGIN&lt;/code&gt;&lt;ol&gt;
+&lt;li&gt;将 fd 指定为非阻塞 IO 的方法&lt;ol&gt;
+&lt;li&gt;使用 &lt;code&gt;O_NONBLOCK&lt;/code&gt; 标志打开&lt;/li&gt;
+&lt;l
+      
+    
+    </summary>
+    
+    
+    
+      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
+    
+      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>13-daemon-processes</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/13-daemon-processes/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/13-daemon-processes/</id>
+    <published>2021-10-09T10:22:25.000Z</published>
+    <updated>2022-01-04T04:18:52.505Z</updated>
+    
+    <summary type="html">
+    
+    </summary>
+    
+    
+    
+      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
+    
+      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>12-thread-control</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/12-thread-control/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/12-thread-control/</id>
+    <published>2021-10-09T10:22:24.000Z</published>
+    <updated>2022-01-04T04:18:52.505Z</updated>
+    
+    <summary type="html">
+    
+    </summary>
+    
+    
+    
+      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
+    
+      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>11-threads</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/11-threads/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/11-threads/</id>
+    <published>2021-10-09T10:22:23.000Z</published>
+    <updated>2022-01-04T04:18:52.505Z</updated>
+    
+    <summary type="html">
+    
+    </summary>
+    
+    
+    
+      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
+    
+      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>10-signals</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/10-signals/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/10-signals/</id>
+    <published>2021-10-09T10:22:21.000Z</published>
+    <updated>2022-01-04T04:18:52.505Z</updated>
+    
+    <summary type="html">
+    
+    </summary>
+    
+    
+    
+      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
+    
+      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>9-process-relationships</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/9-process-relationships/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/9-process-relationships/</id>
+    <published>2021-10-09T10:22:20.000Z</published>
+    <updated>2022-01-04T04:18:52.527Z</updated>
+    
+    <summary type="html">
+    
+    </summary>
+    
+    
+    
+      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
+    
+      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>第 8 章 - 进程控制</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/8-process-control/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/8-process-control/</id>
+    <published>2021-10-09T10:22:19.000Z</published>
+    <updated>2022-01-04T04:18:52.525Z</updated>
+    
+    <content type="html"><![CDATA[<ol><li>进程标识 PID：每个进程都有，唯一标识一个进程，可回收复用<ol><li>id = 0 的进程通常是调度进程，也称为交换进程（swapper）</li><li>id = 1 的进程通常是 init 进程，在自举过程结束时由内核调用</li></ol></li><li><code>fork</code> 函数用来创建新进程<ol><li>一次调用，两次返回<ol><li>父进程返回子进程的 pid，因为一个父进程可能有多个子进程，无法通过其他手段获取子进程的 pid</li><li>子进程返回 0，一个进程只会有一个父进程，因此使用 <code>getppid</code> 可以方便的获得父进程的 pid</li></ol></li><li>fork 之后子进程通过 Copy-On-Write 和父进程共享地址空间</li><li>fork 之后<strong>父、子进程谁先执行的顺序不确定</strong>，有操作系统调度器决定</li><li>如果父进程的标准 IO 缓冲区中有数据，fork 后子进程的标准 IO 缓冲区中也有数据（本质也是内存）</li><li>如果父进程的标准输出被重定向，则子进程的标准输出也会被重定向</li><li>fork 后父、子进程<strong>共享同一个文件偏移量</strong></li><li>如果父、子进程写同一 fd 指向的文件，又没有任何形式的同步（如父等子），那么它们的<strong>输出会相互混合</strong></li><li>父、子进程的相同和区别<ol><li>相同<ol><li>uid, gpid, euid, egid</li><li>附属组 id</li><li>进程组 id</li><li>会话 id</li><li>控制终端</li><li>设置用户 id 标志和设置组 id 标志</li><li>当前工作目录</li><li>根目录</li><li>文件模式创建屏蔽字 umask</li><li>信号屏蔽和安排</li><li>对任一文件描述符的执行时关闭(close-on-exec)标志</li><li>环境</li><li>链接的共享存储段</li><li>存储映像</li><li>资源限制</li></ol></li><li>不同<ol><li>fork 返回值</li><li>pid &amp; ppid</li><li>子进程的 tms_utime, tms_stime, tms_cutim tms_ustime 设置为 0 （CPU 时间）</li><li><strong>不继承</strong>父进程设置的文件锁</li><li>子进程未处理 timer 被清楚</li><li>子进程的未处理信号集设置为空集</li></ol></li></ol></li><li>fork 失败的原因<ol><li>系统中进程太多</li><li>该实际用户 id 的进程总数超过了系统限制(CHILD_MAX)</li></ol></li><li>用法<ol><li>父进程复制自己，父、子进程执行不同的代码段</li><li>一个进程执行一个不同的程序，如 shell</li></ol></li><li>如果子进程的父进程已经终止，则子进程的父进程变为 init 进程（pid=1）</li></ol></li><li>wait/waitpid 父进程等待子进程运行结束时调用<ol><li>子进程的退出是异步动作，通过内核向父进程发送信号 SIFCHILD 实现，可能在父进程执行的任何时间收到<ol><li>父进程调用 wait/waipid 的行为<ol><li>如果其所有子进程都还在运行，则阻塞<ol><li>waitpid 可以通过选项设置不阻塞</li><li>有任何一个子进程终止，则立即获取该子进程的终止状态</li></ol></li><li>如果一个子进程已终止，正等待父进程获取其终止状态，则取得该子进程的终止状态立即返回</li><li>如果它没有任何子进程，则立即出错返回</li></ol></li><li><code>pid_t waitpid(pid_t pid, int *statloc, int options)</code> 的 pid 参数行为<ol><li><code>pid == -1</code> 等待任一子进程，如 wait 等效</li><li><code>pid == 0</code> 等待组 id 等于调用进程组 id 的任一子进程</li><li><code>pid &gt; 0</code> 等待进程 id 与 pid 相等的子进程</li><li><code>pid &lt; -1</code> 等待组 id 等于 pid 绝对值的任一子进程</li></ol></li><li>其他等待函数<ol><li><code>int waitid(idtype_t idtype, id_t id, siginfo_t *infop, int options);</code> idtype 控制等待特定进程、特定进程组还是任一子进程，options 表示关心那些状态变化</li><li><code>wait3</code>/<code>wait4</code> 能够获取子进程执行的统计信息，包括 用户/系统CPU 时间总量、缺页次数、接收信号次数等</li></ol></li></ol></li></ol></li><li>父、子进程通过信号同步：<code>TELL_WAIT</code>, <code>TELL_PARENT</code>. <code>TELL_CHILD</code>, <code>WAIT_PARENT</code>, <code>WAIT_CHILD</code></li><li><code>exec</code> 函数：改变当前进程执行的程序，本质是替换当前进程的正文段、数据段、堆、栈<ol><li>调用时需要提供程序的<strong>路径/文件名/fd中的任意一个</strong></li><li>调用时可以穿度参数表、环境表</li><li>变种之间的区别和关系 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/8-process-control/EBCDD559-0ECB-4E1C-AF79-CE3DD2F7430D.png" class=""> <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/8-process-control/86D37BE8-1EA9-4E68-9D44-16896E62C18B.png" class=""></li><li>进程调用 exec 后，除了 close-on-exec 相关的 fd 发生变化外，其他属性（pid, ppid, timer 资源等）都不变</li></ol></li><li>更改用户 id 或组 id<ol><li>原因：程序需要增加特权、降低特权或阻止访问资源时，需要更改用户 id 或组 id <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/8-process-control/14EE36E5-332B-450F-8B2F-FC8AAEB30874.png" class=""></li></ol></li><li><code>system</code> 函数用于执行 shell 命令并收集命令终止状态</li><li><code>nice</code> 函数用于设置进程的优先级，从而影响进程的调度行为</li><li>进程的时间：墙上时间、用户 CPU 时间、系统 CPU 时间<ol><li>tms_utime: user CPU time</li><li>tms_stime: system CPU time</li><li>tms_cutime: user CPU time, terminated children</li><li>tms_cstime: system CPU time, terminated chilren</li></ol></li></ol>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;ol&gt;
+&lt;li&gt;进程标识 PID：每个进程都有，唯一标识一个进程，可回收复用&lt;ol&gt;
+&lt;li&gt;id = 0 的进程通常是调度进程，也称为交换进程（swapper）&lt;/li&gt;
+&lt;li&gt;id = 1 的进程通常是 init 进程，在自举过程结束时由内核调用&lt;/li&gt;
+&lt;/ol&gt;
+&lt;
+      
+    
+    </summary>
+    
+    
+    
+      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
+    
+      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>第 7 章 - 进程环境</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/7-process-environment/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/7-process-environment/</id>
+    <published>2021-10-09T10:22:17.000Z</published>
+    <updated>2022-01-04T04:18:52.522Z</updated>
+    
+    <content type="html"><![CDATA[<ol><li>c 程序的入口是 <em>main</em> 函数，签名为 <code>int main(int argc, char *argv[])</code>，内核在调用 main 之前先调用特殊的启动例程（<strong>启动例程从内核获得命令行参数和环境变量</strong>）</li><li>进程终止的方式<ol><li>正常终止<ol><li>从 main 返回</li><li>调用 exit （先进行清理处理，再返回内核）</li><li>调用 _exit 或 _Exit （立即进入内核）</li><li>最后一个县城从启动例程返回</li><li>从最后一个线程调用 pthread_exit</li></ol></li><li>异常终止<ol><li>调用 abort</li><li>接到信号</li><li>最后一个线程对取消请求作出响应</li></ol></li></ol></li><li>进程终止时可以执行登记的回调函数<ol><li>函数执行顺序与登记顺序<strong>相反</strong></li><li>一个函数重复登记会被执行多次</li></ol></li><li>C 程序如何启动和终止 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/7-process-environment/123F6618-2148-467D-B038-FD3518DBAEA0.png" class=""></li><li>命令行参数表：每个进程一张，记录命令行参数，<code>argv[0]</code> 是可执行文件</li><li>环境表：每个进程都有一张，是一个字符指针数数组，每个指针包含一个 C 字符串地址，指向环境字符串 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/7-process-environment/6A12D9E1-EB3E-4420-B8AE-4D31945E48CD.png" class=""></li><li>C 程序存储空间布局<ol><li>正文段(text segment)：CPU 执行的机器执行<ol><li>只读</li><li>可共享，在存储器中<strong>只有一个副本</strong></li></ol></li><li>初始化数据段：包含需要明确赋值的变量</li><li>未初始化数据段（<strong>bss</strong>，block started by symbol）：在程序开始执行前，内核将此段中数据初始化为 0 或空指针</li><li>栈：自动变量及函数调用所需的信息<ol><li>函数返回地址</li><li>调用者的环境信息</li><li>临时变量</li></ol></li><li>堆：动态存储分配</li><li>示意图 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/7-process-environment/BCD582E3-363C-41D7-A8DD-04667A5664C3.png" class=""></li><li>size 命令报告 text segment, data segment, bss 长度</li></ol></li><li>共享库：可执行文件中不需要包含公用的库函数，只需要在所有进程都可引用的存储区中保存一个副本，减少了每个可执行文件的长度，并且可以在不用重新链接的情况下，升级共享库</li><li>进程存储空间分配函数，通常使用 sbrk 系统调用实现<ol><li>malloc 分配给定大小的内存</li><li>calloc 为<strong>指定数量指定长度的对象</strong>分配存储空间，分配的每一个 bit 都初始化为 0</li><li>reallac 增加或减少已分配区的长度，长度增长时可能改变内存空间初始值</li><li>free 释放已分配的内存，通常呗放入可用存储区池</li></ol></li><li>跨函数的跳转: setjmp &amp; longjmp 在栈上跳过若干调用帧，返回到当前函数调用路径上的某一个函数中<ol><li><code>int setjmp(jmp_buf env)</code> jmp_buf 是某种形式的数组，包含用来恢复栈状态的所以信息，通常声明为全局变量，调用 <code>setjmp</code> 的地方通常是设置跳转点的地方</li><li><code>void longjmp(jmp_buf env, int val)</code> jmp_buf 同 <code>setjmp</code>，val 为 setjmp 处的返回值</li><li>自动变量、寄存器变量和易失变量<ol><li>volatile 变量、全局变量、静态变量在 longjmp 时会保持不变，不会被 longjmp 回滚</li><li>本质上是主存中的变量在 longjmp 后会保持 longjmp 时的值，而寄存器变量在某些情况会被回滚</li></ol></li></ol></li><li>getrlimit / setrlimit 获取或设置资源限制</li></ol>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;ol&gt;
+&lt;li&gt;c 程序的入口是 &lt;em&gt;main&lt;/em&gt; 函数，签名为 &lt;code&gt;int main(int argc, char *argv[])&lt;/code&gt;，内核在调用 main 之前先调用特殊的启动例程（&lt;strong&gt;启动例程从内核获得命令行参数和环境变量&lt;/st
+      
+    
+    </summary>
+    
+    
+    
+      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
+    
+      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>6-system-data-files-and-information</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/6-system-data-files-and-information/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/6-system-data-files-and-information/</id>
+    <published>2021-10-09T10:22:16.000Z</published>
+    <updated>2022-01-04T04:18:52.522Z</updated>
+    
+    <summary type="html">
+    
+    </summary>
+    
+    
+    
+      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
+    
+      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>第 5 章 - 标准 IO 库</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/5-standard-io-library/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/5-standard-io-library/</id>
+    <published>2021-10-09T10:22:15.000Z</published>
+    <updated>2022-01-04T04:18:52.520Z</updated>
+    
+    <content type="html"><![CDATA[<ol><li>标准 IO 库的操作围绕<strong>流</strong> (stream) 进行</li><li>流的定向（orientation）决定了所读、所写的字符是单字节还是多字节<ol><li>流最初被创建时，没有定向</li><li>如果在<strong>未定向的流</strong>上使用一个<strong>多/单字节的 IO 函数</strong>，则将该留的定向设置为<strong>宽/字节定向</strong></li><li><code>freopen</code> 函数可以<strong>清除</strong>一个流的定向</li><li><code>fwide</code> 函数可以<strong>设置</strong>流的定向，但<strong>不改变已定向流的定向</strong></li></ol></li><li>缓冲：尽可能减少使用 read 和 write 系统调用的次数<ol><li>缓冲类型<ol><li>全缓冲：填满标准 IO 缓冲区后才进行实际 IO 操作<ol><li>驻留在磁盘上的文件通常由标准 IO 库实施全缓冲</li><li>flush 说明标准 IO 缓冲区的写操作，可以标准库自动 flush（如缓冲区填满）或者调用 fflush 进行 flush</li></ol></li><li>行缓冲：输入和输入遇到<strong>换行符</strong>时，标准 IO 库执行 IO 操作<ol><li>流涉及到一个终端时（如 stdin, stdout）时，通常使用行缓冲</li><li>行缓冲的限制<ol><li>标准 IO 库收集每一<strong>行的缓冲区长度是固定</strong>的，如果缓冲区填满了即使还没遇到换行符也进行 IO 操作</li><li>任何时候只要通过标准 IO 从(a)一个不带缓冲的流或(b)一个行缓冲的流（需要从内核得到数据）<strong>得到输入数据</strong>，那么就会 <strong>flush 所有行缓冲输出流</strong></li></ol></li></ol></li><li>不带缓冲：不对字符进行缓冲存储，stderr 通常不带缓冲</li></ol></li></ol></li><li>ISO C 要求的缓冲特征<ol><li>当且仅当当前标准输入和标准输出不指向交互式设备时，他们才是全缓冲的</li><li>标准错误不能是全缓冲的，通常是不带缓冲</li><li>若是指向终端设备的流，则是行缓冲的，否则是全缓冲</li></ol></li><li><code>setbuf</code>/<code>setvbuf</code> 可以修改缓冲类型<ol><li><code>setbuf</code> 打开或关闭缓冲机制，设置的缓冲区长度为 BUFSIZ（由 stdio.h 定义），通常设置之后就是全缓冲的</li><li><code>setvbuf</code> 可以设置上述任何一种缓冲类型和缓冲区长度，也可以有标准 IO 库自动分配合适的缓冲区长度</li></ol></li><li>打开流的函数：<code>fopen</code>, <code>freopen</code>, <code>fdopen</code><ol><li><em>type</em> 参数控制打开流的选项 </li><li>如果多个进程用标准 IO 追加写方式打开同一个文件，每个进程的数据都将正常地写到文件中</li><li>读写类型（+）打开文件时的限制<ol><li><strong>输出后面如果没有 fflush/fseek/fsetpos/rewind，不能直接跟随输入</strong></li><li>如果读操作没有达到文件尾端，或没有 fseek/fsetpos/rewind 不能直接跟随输出</li></ol></li><li>fopen 无法控制文件的访问权限(RWX)</li></ol></li><li>关闭流：<code>fclose</code>，<strong>flush</strong> 缓冲区中的<strong>输出</strong>数据，<strong>丢弃</strong>缓冲区的中的<strong>输入</strong>数据</li><li>当一个进程<strong>正常中止</strong>（exit 或从 main 函数返回），则所有写缓冲数据的标准 IO 流都被 <strong>flush</strong>，所有打开的标准 IO 流都被<strong>关闭</strong></li><li>流的非格式化字符 IO<ol><li>每次一个字符<ol><li>输入 getc/fgetc/getchar<ol><li>getc 不应该是有副作用的表达式</li><li>fgetc 一定是函数，可以作为参数传给其他函数</li><li>返回 <strong>int</strong> 需要和 EOF 做比较</li></ol></li><li>将字符压回流 ungetc<ol><li>回送的字符不一定是上次读到的字符</li><li>不能回送 EOF</li></ol></li><li>输出 putc/fpuc/putchar</li></ol></li><li>每次一行<ol><li>输入 gets/fgets<ol><li>fgets 遇到换行或者读到 n-1 个字符时返回</li><li>不推荐使用 gets，会造成缓冲区溢出问题</li></ol></li><li>输出 puts/fputs<ol><li>fputs 不写终止符(null)，需要自己写换行符</li><li>puts 不写终止符，自动添加换行符</li></ol></li></ol></li></ol></li><li>流的二进制 IO：解决字符 IO 场景遇到 null 停止的问题，fread/fwrite<ul><li>不同机器或者不同编译程序和系统的区别导致，对象的成员变量偏移量不一样，从而无法正常工作，因此需要应用程序进行<strong>序列化</strong>和<strong>反序列化</strong></li></ul></li><li>定位流：ftell/fseek/ftello/feeko/fgetpos/fsetpos/rewind 修改读写文件流的位置</li><li>格式化 IO：printf/fprintf/dprintf/sprintf/snprintf</li><li>创建临时文件：<code>tmpnam</code>/<code>tmpfile</code>/<code>mkdtemp</code>/<code>mkdstemp</code><ol><li>重复调用会清楚静态区，因此文件名应该使用 <code>char[]  f = &quot;foo&quot;</code> 而不是 <code>char *f = &quot;foo&quot;</code></li><li>tmpfile 会先调用 tmpnam 生成一个唯一路径名，使用该路径名创建一个文件，然后立即 unlink 它，（存在时间窗口，不推荐使用）</li><li>mkdtemp/mkstemp 创建的临时文件不会 unlink</li></ol></li><li>内存流：没有底层文件，但是可以使用标准 IO 库读写<ol><li>fmemopen 创建内存流，可以指定内存流开始位置、大学、读写类型</li><li>任何时候需要增加流缓冲区中的数据量以及调用 fclose, fflush, fseek, fseeko, fsetpos 时都会<strong>在当前位置写入一个 null 字节</strong></li><li>因为避免了内存溢出（缓冲区大小是固定的），内存流分非常适用于创建字符串</li></ol></li></ol>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;ol&gt;
+&lt;li&gt;标准 IO 库的操作围绕&lt;strong&gt;流&lt;/strong&gt; (stream) 进行&lt;/li&gt;
+&lt;li&gt;流的定向（orientation）决定了所读、所写的字符是单字节还是多字节&lt;ol&gt;
+&lt;li&gt;流最初被创建时，没有定向&lt;/li&gt;
+&lt;li&gt;如果在&lt;strong&gt;
+      
+    
+    </summary>
+    
+    
+    
+      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
+    
+      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>第 4 章 - 文件和目录</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/4-files-and-directories/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/4-files-and-directories/</id>
+    <published>2021-10-09T10:22:13.000Z</published>
+    <updated>2022-01-04T04:18:52.518Z</updated>
+    
+    <content type="html"><![CDATA[<h2 id="stat-fstat-fstatat-lstat"><a href="#stat-fstat-fstatat-lstat" class="headerlink" title="stat, fstat, fstatat, lstat"></a>stat, fstat, fstatat, lstat</h2><ol><li><code>int stat(const char *restrict pathname, struct stat *restrict buf)</code> 返回 pathname 指定的文件的信息结构</li><li><code>int fstat(int fd, struct stat *buf)</code> 通过 fd 获取文件的结构信息</li><li><code>lstat</code> 与 <code>stat</code> 类似，但是返回的是<strong>符号链接</strong>的信息</li><li><code>strcut stat</code> 的基本结构<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br></pre></td><td class="code"><pre><span class="line"><span class="class"><span class="keyword">struct</span> <span class="title">stat</span> &#123;</span></span><br><span class="line">    <span class="keyword">mode_t</span> st_mode; <span class="comment">/* file type &amp; mode (permissions) */</span></span><br><span class="line">    <span class="keyword">inot_t</span> st_ino; <span class="comment">/* i-node number (serial number) */</span></span><br><span class="line">    <span class="keyword">dev_t</span> st_dev; <span class="comment">/* device number (file system) */</span></span><br><span class="line">    <span class="keyword">dev_t</span> st_rdev; <span class="comment">/* device nuber for sepecial files */</span></span><br><span class="line">    <span class="keyword">nlink_t</span> st_nlink; <span class="comment">/* number of links */</span></span><br><span class="line">    <span class="keyword">uid_t</span> st_uid; <span class="comment">/* user ID of owner */</span></span><br><span class="line">    <span class="keyword">gid_t</span> st_gid; <span class="comment">/* group ID of owner */</span></span><br><span class="line">    <span class="keyword">off_t</span> st_size; <span class="comment">/* size in bytes, for regular files */</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">timespec</span> <span class="title">st_atime</span>;</span> <span class="comment">/* time of last access */</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">timesepc</span> <span class="title">st_mtime</span>;</span> <span class="comment">/* time of last modification */</span></span><br><span class="line">    <span class="class"><span class="keyword">struct</span> <span class="title">timespec</span> <span class="title">st_ctime</span>;</span> <span class="comment">/* time of last file status change */</span></span><br><span class="line">    <span class="keyword">blksize_t</span> st_blksize; <span class="comment">/* best I/O block size*/</span></span><br><span class="line">    <span class="keyword">blkcnt_t</span> st_blocks; <span class="comment">/* number of disk blocks allocated */</span></span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure></li></ol><h2 id="文件类型"><a href="#文件类型" class="headerlink" title="文件类型"></a>文件类型</h2><ol><li>普通文件：包含某种形式的数据，内核必须理解可执行文件的格式</li><li>目录文件：包含了其他文件的<strong>名字</strong>，以及指向这些文件信息的<strong>指针</strong>，<strong>任何进程都可以读</strong>目录的内容，<strong>只有内核可以直接写目录文件</strong></li><li>块特殊文件：提供对设备（如磁盘）<strong>带缓冲</strong>的访问，每次访问以固定长度为单位进行</li><li>字符特殊文件：提供对设备<strong>不带缓冲</strong>的访问，每次访问长度可变（如键盘）。</li><li>FIFO：用于进程间通信，也称为命名管道（named pipe）</li><li>socket：用于进程间的<strong>网络通信</strong>，也可以用作一台宿主机之间的非网络通信</li><li>符号链接(symbol link)：指向另一个文件，通过</li></ol><h2 id="文件和进程的-uid-gid"><a href="#文件和进程的-uid-gid" class="headerlink" title="文件和进程的 uid/gid"></a>文件和进程的 uid/gid</h2><ol><li>设置用户 ID &amp; 实际用户 ID &amp; 保存的设置用户 ID<ol><li>实际用户 ID：标识我们是谁，登录时确定</li><li>有效用户 ID：决定了我们的访问权限</li><li>保存的设置用户 ID：有效用户 ID 和实际用户 ID 的副本</li><li>可以通过 st_mode 的标志位设置一个特殊标志，当执行改文件时，将进程的有效用户 ID 设置为文件所有者的用户 ID（例如访问 <code>/etc/passwd</code>，会获得 root 权限）<h2 id="文件访问权限："><a href="#文件访问权限：" class="headerlink" title="文件访问权限："></a>文件访问权限：</h2>RWX（read/write/execute）, user/group/other</li><li>通过名字打开任一类型的文件时，必须对该名字中包含的目录或隐含的当前工作目录具有执行权限(X)</li><li>对于一个文件是否有读/写权限，决定了是否能打开一个文件进行读操作，与 O_RDONLY/O_WRONLY 和 O_RDWR 标志相关</li><li>open 文件时如果要设置 O_TRUNC，必须要有写权限</li><li>删除文件时，必须有写和执行权限</li><li>被 exec 函数执行的文件，必须是普通文件，并有执行权限</li><li>进程每次打开、创建、删除文件时，内核进行权限测试，对文件的 uid &amp; gid，进程的有效 uid &amp; gid，进程的附属组 ID 进行测试<ol><li>uid=0 的超级用户可以直接访问</li><li>如果进程有效 uid = 文件所属的 uid 且有适当权限则允许访问</li><li>如果进程的有效 gid = 文件所属的 gid 或进程的附属组 id = 文件 gid，且拥有释放权限则允许访问</li><li>如果文件的<strong>其他用户</strong>有适当权限，则允许访问</li><li>其他情况拒绝访问</li></ol></li></ol></li><li>新目录/文件的所有权：使用 <code>open</code>/<code>creat</code> 创建新文件时，新文件的用户 id 为进程的有效用户 id，组 id 为进程的有效组 id 或所在目录的组 id</li></ol><h2 id="其他函数"><a href="#其他函数" class="headerlink" title="其他函数"></a>其他函数</h2><ol><li>access &amp; faccessat<ol><li>功能：用于测试当前进程对某个文件是否有对应权限，成功返回 0，出错范围-1</li><li>区别<ol><li>access 参数为 pathname</li><li>faccessat 参数为 fd 和 pathname</li></ol></li></ol></li><li>umask 设置文件模式创建屏蔽字，并返回之前的值，即<strong>屏蔽字中为 1 的位，关闭对应的权限</strong></li><li>chmod &amp; fchmod &amp; fchmodat 修改现有文件的访问权限</li><li>chown &amp; fchown &amp; fchownat &amp; lchown 修改现有文件或符号链接的 owner</li><li><code>int truncate(const char *pathname, off_t length)</code> 截断文件<ol><li>如果文件当前长度大于 length，则 length 之后的数据不能再访问</li><li>如果文件当前<strong>长度小于 length，则文件长度将增到到 length</strong>，增加部分为<strong>空洞</strong>（读 0）</li></ol></li><li><code>link</code> 创建指向给定 inode 的目录项，增加该 inode 的链接计数，<code>unlink</code> 删除目录项，即减少 path 对于对应 inode 的链接计数<ol><li>一个文件的链接计数为 0，并且打开它的进程数也为 0 时，才会被删除</li><li>文件 <em>unlink</em> 后，会删除对应名称的目录项，没法通过 <code>ls -l</code> 在文件系统中看到</li><li>一个进程可以用 <em>unlink</em> 它创建的临时文件，保证进程崩溃后临时文件也被删除</li></ol></li><li><code>remove</code> 解除对文件或目录的链接，类似 <code>unlink</code></li><li><code>rename(const char *oldname, const chat *newname)</code> 对文件或目录进行重命名<ol><li>如果 oldname 是文件，为该文件或目录重命名，<strong>要求如果 newname 若已存在不能是目录</strong>，会删除 newname 的目录项，然后将 oldname 修改为 newname</li><li>如果 oldname 是目录，<strong>要求如果 newname 存在，则 newnmae 必须是空目录（只含 <code>.</code>, <code>..</code>）</strong></li><li>如果 oldname 或 newname 引用符号链接，则处理的是符号链接本身，而不是所引用的文件</li><li>不能对 <code>.</code> 和 <code>..</code> 重命名，即 <code>.</code> 和 <code>..</code> 不能出现在路径最后</li><li>如果 oldname 和 newname 相同，则不进行任何修改</li></ol></li><li><code>symlink</code> 创建符号链接，<code>readlink</code> 读取符号链接</li><li><code>futimens</code>/<code>utimensat</code> 更新文件数据的访问和修改时间</li><li><code>mkdir</code>/<code>mkdirat</code> 创建新的空目录</li><li><code>rmdir</code> 删除空目录，如果该目录没有进程打开，则直接释放该目录占用的空间；如果该目录被进程打开，则删除 <code>.</code> 和 <code>..</code>后返回，无法在该目录下不能创建新文件，进程关闭它之间不释放磁盘空间</li><li><code>chdir</code> 修改当前进程的工作目录（搜索相对路径的起点），不影响其他进程</li><li><code>getcwd</code> 获取当前进程的工作目录</li></ol><h2 id="文件长度"><a href="#文件长度" class="headerlink" title="文件长度"></a>文件长度</h2><ol><li>stat 结构体中 st_size 表示文件长度，单位为字节，<strong>只对普通文件、目录文件和符号链接有意义</strong></li><li>普通文件长度可以为 0，开始读时，直接返回 EOF</li><li>符号链接的文件长度为文件名中的实际字节数</li><li>带空洞的文件长度大于磁盘中的 byte 数</li></ol><h2 id="文件系统"><a href="#文件系统" class="headerlink" title="文件系统"></a>文件系统</h2><ol><li>磁盘、分区与文件系统：一个磁盘可能有多个分区，每个分区可能有各自的文件系统 <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/4-files-and-directories/A8A5CD64-5368-42EF-8C98-7636319E0E36.png" class=""></li><li>inode 和数据块<ol><li>inode 中存储了 links 数，即指向该 inode 的目录项数，links 数为 0 时，才会删除文件<ol><li>可以通过 unlink 删除目录项到 inode 的链接</li><li>符号链接并不会增加 inode 中的链接计数，因为符号链接是被链接文件的路径</li></ol></li><li>inode 中包含了文件有关的所有信息，stat 中的大部分信息取自 inode</li></ol></li><li><strong>文件名和 inode 编号存放在目录项（dentry）中</strong></li><li>同一个文件系统下，重命名文件只会构造一个执行现有 inode 的目录项(dentry)并删除老的 dentry，因此<strong>mv不会改变链接计数</strong></li><li>一个 dentry 不能指向另一个文件系统的 inode，因为 dentry 中的 inode 编号必须是同一个文件系统，因此 hard link 不能跨文件系统</li><li>任何一个目录文件至少包含 2 个 inode 链接计数（1 个文件名称 + 1 个 <code>.</code>），如果含有子目录，每有一个子目录，增加一个 inode 链接计数（<code>..</code>） <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/4-files-and-directories/1647FEC4-90B5-4315-B5A4-BD0C576619F4.png" class=""></li></ol><h2 id="链接文件"><a href="#链接文件" class="headerlink" title="链接文件"></a>链接文件</h2><ol><li>硬链接：指向文件 inode，符号链接指向另一个文件的路径</li><li>引入软连接的原因：避开硬链接的限制<ol><li>硬链接通常要求<strong>链接和文件处于同一文件系统</strong></li><li><strong>只有超级用户才允许对目录进行硬链接</strong></li></ol></li></ol><h2 id="文件时间"><a href="#文件时间" class="headerlink" title="文件时间"></a>文件时间</h2><ol><li>时间戳 atime, mtime, ctime<ol><li>atime 文件<strong>数据</strong>最后<strong>访问</strong>时间，如 read 会更新 atime</li><li>mtime 文件<strong>数据</strong>最后<strong>修改</strong>时间，如 write 会更新 mtime</li><li>ctime 文件<strong>inode状态</strong>最后更改时间，如果 chmod, chown, ln</li></ol></li><li>文件系统不维护对一个 inode 的最后一次<strong>访问</strong>时间，即 <code>access</code> 和 <code>stat</code> 并不改变任何一个时间戳</li><li>ctime 不能通过函数修改</li></ol><h2 id="设备特殊文件"><a href="#设备特殊文件" class="headerlink" title="设备特殊文件"></a>设备特殊文件</h2><ol><li>每个文件系统所在的存储设备都由其主、次设备号表示<ol><li>主设备号：标识设备驱动程序</li><li>次设备号：标识特定子设备</li></ol></li><li>使用 major、minor 宏来访问主、次设备号</li><li>文件系统中与每个文件名关联的 st_dev 值是文件系统的设备号</li><li>只有字符特殊设备和块特殊设备才有 st_rdev 值，包含实际设备的设备号</li></ol>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;h2 id=&quot;stat-fstat-fstatat-lstat&quot;&gt;&lt;a href=&quot;#stat-fstat-fstatat-lstat&quot; class=&quot;headerlink&quot; title=&quot;stat, fstat, fstatat, lstat&quot;&gt;&lt;/a&gt;stat, fstat
+      
+    
+    </summary>
+    
+    
+    
+      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
+    
+      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>第 3 章 - 文件 IO</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/3-file-io/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/3-file-io/</id>
+    <published>2021-10-09T10:22:12.000Z</published>
+    <updated>2022-01-04T04:18:52.516Z</updated>
+    
+    <content type="html"><![CDATA[<ol><li>特殊 fd<ol><li><code>0</code>：STDIN</li><li><code>1</code>: STDOUT</li><li><code>2</code>: STDERR</li></ol></li><li>延迟写（delayed write）：向文件中写入数据时，内核通常将数据复制到缓冲区重，然后排入队列，最后写入磁盘</li></ol><h2 id="文件操作的函数"><a href="#文件操作的函数" class="headerlink" title="文件操作的函数"></a>文件操作的函数</h2><ol><li><code>open</code> 打开或创建文件，<code>int open(const char *path, int oflag, ... /* mode_t mode */)</code><ol><li><code>path</code>：要打开或创建的文件的名称</li><li><code>olfag</code>：打开文件选项<ol><li>必选：只读、只写、读写、只执行、只搜索（目录），只能指定一个</li><li>可选：追加、不存在时创建、如果不是目录则报错、如果文件已存在并尝试创建时报错、如果是符号链接则报错、非阻塞、Truncate（截断文件，长度置为 0）、DSYNC、RSYNC<ol><li>DSYNC：write 需要等物理 IO 完成，如果该写操作不影响读取刚写入的数据，则不需要等待文件属性被更新</li><li>RSYNC：是每一个以文件描述符作为参数进行的 read 操作等待，知道所有对文件同意部分挂起的写操作都完成</li></ol></li></ol></li></ol></li><li><code>openat</code> 与 <code>open</code> 类似，但是允许使用相对路径打开目录中的文件，而不是只能打开当前目录的文件</li><li><code>create</code> 创建文件，等价于 <code>open(path, O_WRONLY | O_CREAT O_TRUNC, mode)</code></li><li><code>close</code> 关闭一个打开的文件，<strong>关闭文件时会释放改进程加载改文件上的所有记录锁</strong>，进程终止时，内核自动关闭它所有的打开文件</li><li><code>off_t lseek(int fd, off_t offset, int whence)</code> 移动文件的读写位置<ol><li><code>whence</code>参数选项<ol><li><code>SEEK_SET</code>：偏移量设置为<strong>距文件开始处 offset 个字节</strong>, 0 + offset</li><li><code>SEEK_CUR</code>：current_pos + offset，offset 可正可负</li><li><code>SEEK_END</code>：file_length + offset，offset 可正可负</li></ol></li><li>并非所有文件都可以设置偏移量，如 pipe、FIFO、socket 都不可以</li><li>lseek <strong>只是将当前文件偏移量记录在内核中（文件表项） ，并不引起任何 IO 操作</strong>，该偏移量应用于下一个读写操作</li><li>lseek 可以用于构建文件空洞，读是返回 0，不占磁盘块</li><li>lseek 到文件末尾时，当前偏移量设置为 i-node 中的文件长度</li></ol></li><li><code>read</code> 从打开的文件中读数据，如果成果则返回读到的字节数，如果已到达文件末尾，则返回 0</li><li><code>ssize_t write(int fd, const void *buf, size_t nbytes)</code> 向打开的文件中写数据，返回写成功的字节数，通常与 nbytes 相同，否则出错，<ol><li>写文件后会导致<strong>当前文件的偏移量增加</strong>，增加量为写入 byte 数，如果偏移量超过了 i-node 中的文件长度，则更新 i-node 中的当前文件长度</li><li>如果使用 <code>O_APPEND</code> 模式打开的问题，每次写之前会把文件偏移量设置为 i-node 中的文件长度</li></ol></li><li><strong>read ahead</strong>：当操作系统检测到正在进行顺序读取时，OS 尝试读入比用户进程要求更多的数据，并假想用户进程很快就会读这些数据</li><li><code>dup</code> 复制一个现有的 fd，即增肌一个文件指针，指向已经存在的文件表项，<code>fcntl(fd, F_DUPFD, 0)</code> 可以达到同样的效果，可用 <code>dup2(int fd, int fd2)</code> 指定复制出的 fd 的值，如果 fd2 已打开则先关闭它<br> !<img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/3-file-io/8C815CF3-C88F-4A3A-8135-FCCB2A51CB92.png" class=""></li><li><code>sync</code>/<code>fsync</code>/<code>fdatasync</code>：将内存中的数据刷到磁盘<ol><li><code>sync</code>：只将修改过的 buffer 写入队列就返回，<strong>不等待实际的磁盘写操作结束</strong></li><li><code>fsync</code>：只对 fd 指定的一个文件起左右，并且<strong>等写磁盘操作结束才返回</strong></li><li><code>fdatasync</code>：类似 fsync 但是<strong>只影响数据部分</strong>，而 <code>fsync</code> 还会同步更新文件的属性</li></ol></li><li><code>int fcntl(int fd, int cmd, ... /*int arg*/)</code>，由 <code>cmd</code> 参数控制具体操作<ol><li>支持的操作<ol><li>复制已有 fd</li><li>获取/设置 fd 标志，当前只定义了 <code>FD_CLOEXEC</code></li><li>获取/设置文件状态标志</li><li>获取/设置记录锁</li></ol></li><li>修改 fd 标志和文件状态标志时，<strong>必须先获得现在的值，修改后设置新值</strong>，否则会关闭之前设置的标志位</li><li><code>fcntl</code> 只需要 fd 作为参数，而不需要文件名，对于管道能场景很有用</li></ol></li><li>打开 ‘/dev/fd’ 下的文件，等效于 <code>dup</code></li></ol><h2 id="文件共享"><a href="#文件共享" class="headerlink" title="文件共享"></a>文件共享</h2><ol><li>内核使用 3 种数据结构表示打开文件，即文件描述符表、文件表、v-node<ol><li>文件描述符表：每个进程一张，每个 fd 占一项，与 fd 关联的是 <em>close_on_exec</em> 和指向文件表项的指针</li><li>打开文件表，每个表项包括文件状态标志(flags)、当前文件偏移量、指向改文件 v-node 表项的指针</li><li>v-node：包含了<strong>文件类型</strong>和对该文件进行各种<strong>操作的指针</strong>，以及 i-node <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/3-file-io/71815891-579F-41BA-87F6-710C9515A5A8.png" class=""> <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/3-file-io/17895ADC-DDE2-4DC3-9A76-F6D38E31B6A2.png" class=""></li></ol></li></ol><h2 id="原子操作"><a href="#原子操作" class="headerlink" title="原子操作"></a>原子操作</h2><ol><li>没有使用 <code>O_APPEND</code> 模式打开时，<code>lseek</code> 到文件末尾，然后再 <code>write</code> 没有原子性保证，如果多进程写同一个文件，则会相互覆盖，正确做法是使用 <code>O_APPEND</code> 模式打开</li><li><code>pread</code> 和 <code>pwrite</code> 保证原子性读写<ol><li>调用 pread 是<strong>无法中断</strong>其定位和操作</li><li>不更新当前文件偏移量</li></ol></li></ol>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;ol&gt;
+&lt;li&gt;特殊 fd&lt;ol&gt;
+&lt;li&gt;&lt;code&gt;0&lt;/code&gt;：STDIN&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;1&lt;/code&gt;: STDOUT&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;2&lt;/code&gt;: STDERR&lt;/li&gt;
+&lt;/ol&gt;
+&lt;/li&gt;
+&lt;li&gt;延迟写（delayed
+      
+    
+    </summary>
+    
+    
+    
+      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
+    
+      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>第 2 章 - UNIX 标准及实现</title>
+    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/2-unix-standardization-and-implementations/"/>
+    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/2-unix-standardization-and-implementations/</id>
+    <published>2021-10-09T10:22:11.000Z</published>
+    <updated>2022-01-04T04:18:52.516Z</updated>
+    
+    <content type="html"><![CDATA[<ol><li>ISO ANSI 标准：由国际标准化组织制定，定义了 ISO C 标准</li><li>IEEE POSIX：Portable Operating System Interface，定义了操作系统标准接口，而没有提供实现</li><li>Single UNIX Specification：POSIX.1 的超集，定义了一些附加接口，扩展了 POSIS。1 提供的功能</li><li>只有遵循 XSI(X/Open System Interface)的实现才能称为 Unix 系统</li><li>UNIX 环境的限制<ol><li>编译时限制：头文件，如 int 的最大值</li><li>运行时限制<ol><li>与文件或目录<strong>无关</strong>的运行时限制，(sysconf)</li><li>与文件或目录<strong>有关</strong>的运行时限制，(pathconf, fpathconf)</li></ol></li></ol></li></ol>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;ol&gt;
+&lt;li&gt;ISO ANSI 标准：由国际标准化组织制定，定义了 ISO C 标准&lt;/li&gt;
+&lt;li&gt;IEEE POSIX：Portable Operating System Interface，定义了操作系统标准接口，而没有提供实现&lt;/li&gt;
+&lt;li&gt;Single UNI
+      
+    
+    </summary>
+    
+    
+    
+      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
+    
+      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
+    
+      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
+    
+  </entry>
+  
+</feed>
