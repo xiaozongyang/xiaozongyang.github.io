@@ -6,7 +6,7 @@
   <link href="/atom.xml" rel="self"/>
   
   <link href="http://xiaozongyang.github.io/"/>
-  <updated>2022-03-05T08:19:04.631Z</updated>
+  <updated>2022-06-11T10:34:33.230Z</updated>
   <id>http://xiaozongyang.github.io/</id>
   
   <author>
@@ -15,6 +15,63 @@
   </author>
   
   <generator uri="https://hexo.io/">Hexo</generator>
+  
+  <entry>
+    <title>gtest tips summary</title>
+    <link href="http://xiaozongyang.github.io/2022/06/10/gtest-summary/"/>
+    <id>http://xiaozongyang.github.io/2022/06/10/gtest-summary/</id>
+    <published>2022-06-10T10:32:51.000Z</published>
+    <updated>2022-06-11T10:34:33.230Z</updated>
+    
+    <content type="html"><![CDATA[<h2 id="Tips"><a href="#Tips" class="headerlink" title="Tips"></a>Tips</h2><ol><li><p><code>ASSERT_*</code> 与 <code>EXPECT_*</code></p><ol><li>语义：在检查条件失败时，<code>ASSERT_*</code> 会导致程序异常退出，而 <code>EXPECT_*</code> 会继续执行</li><li>使用场景:<ol><li><code>ASSERT_*</code> 适用于断言测试程序的前置条件，例如 server 有没有正常启动，在这种情况下后续的测试都没有意义</li><li><code>EXPECT_*</code> 适用于对后置结果的检查，依次检查实际结果与预期是否相符，如果有多个不符的检查，会依次打印出来而不需要多次执行测试</li></ol></li><li>更多检查条件见：<a href="https://google.github.io/googletest/reference/assertions.html" target="_blank" rel="noopener">Assertions References</a></li></ol></li><li><p>断言某个 mock 函数的执行次数：<code>EXPECT_CALL(foo, Bar(_)).Times(n)</code> 断言 <code>foo.Bar</code> 被执行了 n 次</p><ol><li>支持任意次数：<code>AnyNumber()</code></li><li>支持次数范围：<code>AtLeast(n)</code> 即 <code>&gt;=n</code> 次</li></ol></li><li><p>断言 mock 函数的参数取值：<code>Matcher</code>，参考 <a href="https://github.com/google/googletest/blob/main/docs/reference/matchers.md" target="_blank" rel="noopener">Matchers References</a></p><ol><li>断言字段：<code>Filed(&amp;class::field, m)</code></li><li>断言容器：<ol><li>是非为空 <code>IsEmpty</code></li><li>是否包含某个元素 <code>Contains</code></li><li>是否是另一个集合的自己或超集 <code>IsSubsetOf</code> &amp; <code>IsSupersetOf</code></li></ol></li><li>断言字符串取值：<ol><li>正则 <code>ContainsRegex</code></li><li>以某些内容起始或结束: <code>StartsWith</code> &amp; <code>EndsWith</code></li></ol></li></ol></li><li><p>创建 Mock class：<code>MOCK_METHOD(ReturnType, MethodName, (Args ...))</code></p></li><li><p>自定义 Mock function 行为：<code>EXPECT_CALL(...).WillReatly(Invoke(...))</code></p><ol><li>Mock private/protected function 也必须写在 Mock class 的 public section 中，<a href="http://google.github.io/googletest/gmock_cook_book.html#mocking-private-or-protected-methods" target="_blank" rel="noopener">参考</a></li><li>Mock 重载函数时需要指定 <code>override</code> 修饰符，<a href="http://google.github.io/googletest/gmock_cook_book.html#mocking-overloaded-methods" target="_blank" rel="noopener">参考</a></li></ol></li><li><p>在测试前后执行逻辑：<code>TEST_F SetUp/TearDown</code></p></li></ol><h2 id="一个例子"><a href="#一个例子" class="headerlink" title="一个例子"></a>一个例子</h2><pre><code class="cpp"><span class="class"><span class="keyword">class</span> <span class="title">Foo</span> {</span> <span class="keyword">public</span>:  ...  <span class="function"><span class="keyword">virtual</span> <span class="keyword">bool</span> <span class="title">Transform</span><span class="params">(Gadget* g)</span> </span>= <span class="number">0</span>; <span class="keyword">protected</span>:  <span class="function"><span class="keyword">virtual</span> <span class="keyword">void</span> <span class="title">Resume</span><span class="params">()</span></span>; <span class="keyword">private</span>:  <span class="function"><span class="keyword">virtual</span> <span class="keyword">int</span> <span class="title">GetTimeOut</span><span class="params">()</span></span>;};<span class="class"><span class="keyword">class</span> <span class="title">MockFoo</span> :</span> <span class="keyword">public</span> Foo { <span class="keyword">public</span>:  ...  MOCK_METHOD(<span class="keyword">bool</span>, Transform, (Gadget* g), (<span class="keyword">override</span>));  <span class="comment">// The following must be in the public section, even though the</span>  <span class="comment">// methods are protected or private in the base class.</span>  MOCK_METHOD(<span class="keyword">void</span>, Resume, (), (<span class="keyword">override</span>));  MOCK_METHOD(<span class="keyword">int</span>, GetTimeOut, (), (<span class="keyword">override</span>));};TEST(FooTest, Example) {    Foo foo = <span class="keyword">new</span> MockFoo();    <span class="comment">// 直接 mock 返回固定结果</span>    EXPECT_CALL(foo, GetTimeOut()).WillRepeatly(Return(<span class="number">10</span>));    <span class="comment">// mock function 执行自定义逻辑</span>    EXPECT_CALL(foo, Resume()).WillRepeatly(Invoke([](){ <span class="built_in">printf</span>(<span class="string">"call Resume"</span>); }));    foo.Resume();    <span class="comment">// 检查 mock function 调用次数</span>    EXPECT_CALL(foo.Resume()).Times(<span class="number">1</span>);    EXPECT_EQ(<span class="number">10</span>, foo.GetTimeOut());}</code></pre>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;h2 id=&quot;Tips&quot;&gt;&lt;a href=&quot;#Tips&quot; class=&quot;headerlink&quot; title=&quot;Tips&quot;&gt;&lt;/a&gt;Tips&lt;/h2&gt;&lt;ol&gt;
+&lt;li&gt;&lt;p&gt;&lt;code&gt;ASSERT_*&lt;/code&gt; 与 &lt;code&gt;EXPECT_*&lt;/code&gt;&lt;/p&gt;
+&lt;ol
+      
+    
+    </summary>
+    
+    
+    
+      <category term="gtest" scheme="http://xiaozongyang.github.io/tags/gtest/"/>
+    
+      <category term="c++" scheme="http://xiaozongyang.github.io/tags/c/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>Apache Bookkeeper</title>
+    <link href="http://xiaozongyang.github.io/2022/03/20/apache-bookkeeper/"/>
+    <id>http://xiaozongyang.github.io/2022/03/20/apache-bookkeeper/</id>
+    <published>2022-03-19T18:01:12.000Z</published>
+    <updated>2022-04-09T12:35:14.018Z</updated>
+    
+    <content type="html"><![CDATA[<h2 id="基础概念"><a href="#基础概念" class="headerlink" title="基础概念"></a>基础概念</h2><ol><li><code>ledger</code>: 日志流<ol><li>具有全局唯一的 id</li><li>只允许追加写</li><li>提供 <code>at-most-once</code> 语义</li></ol></li><li><code>record</code>: 记录，用户写入的最小单位，也叫 <code>entry</code><ol><li><code>entry</code> 归属于某个 <code>ledger</code></li><li><code>entry</code> 具有唯一的 id</li></ol></li><li><code>bookie</code>: 存储 ledger 的服务器</li></ol><h2 id="架构"><a href="#架构" class="headerlink" title="架构"></a>架构</h2><img src="/2022/03/20/apache-bookkeeper/fig1-architecture-of-apache-bookkeeper.png" class=""><ol><li>Metadata Store：存储 Ledger 的元数据，同时为 Client 提供服务发现功能<ul><li>Ledger 元数据包括<ul><li>Ledger 状态： Open / Closed</li><li>Ensambles: 每段 Eid 范围所在的 bookie</li></ul></li></ul></li><li>Bookie: 存储 Ledger 的数据<ol><li>Journal: 日志文件，记录了追加操作，用于保证可靠性，所有 Ledger 共享同一个 journal 文件</li><li>LederStorage</li></ol></li><li>Client: 负责处理一致性相关逻辑<ol><li>Writer Client 负责生成 EntryId</li></ol></li><li>Ensamble / Write Quorum / Ack Quorum<ol><li>Ensable 一组 bookie，负责存储一个 Ledger 的所有副本</li><li>Write Quorum：写入分组，Write Quorum Size 即为保存副本数</li><li>Ack Quorum Size：等待几个 Write Quorum 请求成功</li></ol></li><li>LastAddConfirmed &amp; LastAddPushed<ol><li>LAP: 最后一条发送的 Eid</li><li>LAC：最后一条写入成功的 Eid<ul><li>LAC 之前的所有的 Entry 都已经 Confirm 过</li><li>LAP 和 LAC 之间的 Entry 是 on-flying</li><li>假设发出去请求 1 和 2，2 先回来，不能把 LAC 改为 2，必须等 1 和 2 都回来了才能改成 2</li><li>LAC 存在 Entry Metadata 中</li></ul></li></ol></li><li>Fencing: 防止脑裂<ul><li>给 bookie 发 Fenced 状态，之后我那个这个 Ledger 写的操作会失败，Client 收到 LedgerFenced 错误</li><li>Client 收到 LedgerFenced 错误后，会放弃 Ledger 的 Ownership</li><li>新 Client 会将 LAC 之后的 Entry 进行 Forward Recovery，即尝试修复 LAC 和 LAP 之间的 Entry，这个动作由 AutoRecovery Worker 后台完成（可能同时由多个 worker 同时负责，最小粒度为 Entry）</li><li>新 Client 关闭老 Ledger 并打开新 Ledger</li></ul></li></ol><h3 id="Bookie-写入过程"><a href="#Bookie-写入过程" class="headerlink" title="Bookie 写入过程"></a>Bookie 写入过程</h3><img src="/2022/03/20/apache-bookkeeper/fig2-write-cache-flush.png" class=""><ol><li>先写 Journal，fsync 成功后才向 Client 返回成功，保证可靠性<ul><li>支持 Group Commit，在一定时间间隔内的写入的数据一次 fsync 到盘上</li></ul></li><li>再写内存的 Write Cache<ul><li>对 Entry 按照 Lid, Eid 排序</li><li>Write Cache 写满之后 flush 到 Entry Log 中，并按 Ledger 生成索引</li><li>Entry Log 中同一个 Ledger 的 Entry 具有局部性</li></ul></li><li>删除 Journal</li><li>如果 Writer 写入失败，会有新的 Writer Close 当前 Ledger 去写新的 Ledger</li></ol><h2 id="参考"><a href="#参考" class="headerlink" title="参考"></a>参考</h2><ol><li><a href="https://bookkeeper.apache.org/docs/latest/getting-started/concepts/" target="_blank" rel="noopener">BookKeeper concepts and architecture</a></li></ol>]]></content>
+    
+    <summary type="html">
+    
+      
+      
+        &lt;h2 id=&quot;基础概念&quot;&gt;&lt;a href=&quot;#基础概念&quot; class=&quot;headerlink&quot; title=&quot;基础概念&quot;&gt;&lt;/a&gt;基础概念&lt;/h2&gt;&lt;ol&gt;
+&lt;li&gt;&lt;code&gt;ledger&lt;/code&gt;: 日志流&lt;ol&gt;
+&lt;li&gt;具有全局唯一的 id&lt;/li&gt;
+&lt;li&gt;只允许
+      
+    
+    </summary>
+    
+    
+    
+      <category term="storage" scheme="http://xiaozongyang.github.io/tags/storage/"/>
+    
+      <category term="note" scheme="http://xiaozongyang.github.io/tags/note/"/>
+    
+  </entry>
   
   <entry>
     <title>Windows Azure Storage: A highly Available Cloud Storage Service with Strong Consistentcy</title>
@@ -481,72 +538,6 @@
       
       
         &lt;h2 id=&quot;stat-fstat-fstatat-lstat&quot;&gt;&lt;a href=&quot;#stat-fstat-fstatat-lstat&quot; class=&quot;headerlink&quot; title=&quot;stat, fstat, fstatat, lstat&quot;&gt;&lt;/a&gt;stat, fstat
-      
-    
-    </summary>
-    
-    
-    
-      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
-    
-      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
-    
-      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
-    
-  </entry>
-  
-  <entry>
-    <title>第 3 章 - 文件 IO</title>
-    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/3-file-io/"/>
-    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/3-file-io/</id>
-    <published>2021-10-09T10:22:12.000Z</published>
-    <updated>2022-01-04T04:18:52.516Z</updated>
-    
-    <content type="html"><![CDATA[<ol><li>特殊 fd<ol><li><code>0</code>：STDIN</li><li><code>1</code>: STDOUT</li><li><code>2</code>: STDERR</li></ol></li><li>延迟写（delayed write）：向文件中写入数据时，内核通常将数据复制到缓冲区重，然后排入队列，最后写入磁盘</li></ol><h2 id="文件操作的函数"><a href="#文件操作的函数" class="headerlink" title="文件操作的函数"></a>文件操作的函数</h2><ol><li><code>open</code> 打开或创建文件，<code>int open(const char *path, int oflag, ... /* mode_t mode */)</code><ol><li><code>path</code>：要打开或创建的文件的名称</li><li><code>olfag</code>：打开文件选项<ol><li>必选：只读、只写、读写、只执行、只搜索（目录），只能指定一个</li><li>可选：追加、不存在时创建、如果不是目录则报错、如果文件已存在并尝试创建时报错、如果是符号链接则报错、非阻塞、Truncate（截断文件，长度置为 0）、DSYNC、RSYNC<ol><li>DSYNC：write 需要等物理 IO 完成，如果该写操作不影响读取刚写入的数据，则不需要等待文件属性被更新</li><li>RSYNC：是每一个以文件描述符作为参数进行的 read 操作等待，知道所有对文件同意部分挂起的写操作都完成</li></ol></li></ol></li></ol></li><li><code>openat</code> 与 <code>open</code> 类似，但是允许使用相对路径打开目录中的文件，而不是只能打开当前目录的文件</li><li><code>create</code> 创建文件，等价于 <code>open(path, O_WRONLY | O_CREAT O_TRUNC, mode)</code></li><li><code>close</code> 关闭一个打开的文件，<strong>关闭文件时会释放改进程加载改文件上的所有记录锁</strong>，进程终止时，内核自动关闭它所有的打开文件</li><li><code>off_t lseek(int fd, off_t offset, int whence)</code> 移动文件的读写位置<ol><li><code>whence</code>参数选项<ol><li><code>SEEK_SET</code>：偏移量设置为<strong>距文件开始处 offset 个字节</strong>, 0 + offset</li><li><code>SEEK_CUR</code>：current_pos + offset，offset 可正可负</li><li><code>SEEK_END</code>：file_length + offset，offset 可正可负</li></ol></li><li>并非所有文件都可以设置偏移量，如 pipe、FIFO、socket 都不可以</li><li>lseek <strong>只是将当前文件偏移量记录在内核中（文件表项） ，并不引起任何 IO 操作</strong>，该偏移量应用于下一个读写操作</li><li>lseek 可以用于构建文件空洞，读是返回 0，不占磁盘块</li><li>lseek 到文件末尾时，当前偏移量设置为 i-node 中的文件长度</li></ol></li><li><code>read</code> 从打开的文件中读数据，如果成果则返回读到的字节数，如果已到达文件末尾，则返回 0</li><li><code>ssize_t write(int fd, const void *buf, size_t nbytes)</code> 向打开的文件中写数据，返回写成功的字节数，通常与 nbytes 相同，否则出错，<ol><li>写文件后会导致<strong>当前文件的偏移量增加</strong>，增加量为写入 byte 数，如果偏移量超过了 i-node 中的文件长度，则更新 i-node 中的当前文件长度</li><li>如果使用 <code>O_APPEND</code> 模式打开的问题，每次写之前会把文件偏移量设置为 i-node 中的文件长度</li></ol></li><li><strong>read ahead</strong>：当操作系统检测到正在进行顺序读取时，OS 尝试读入比用户进程要求更多的数据，并假想用户进程很快就会读这些数据</li><li><code>dup</code> 复制一个现有的 fd，即增肌一个文件指针，指向已经存在的文件表项，<code>fcntl(fd, F_DUPFD, 0)</code> 可以达到同样的效果，可用 <code>dup2(int fd, int fd2)</code> 指定复制出的 fd 的值，如果 fd2 已打开则先关闭它<br> !<img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/3-file-io/8C815CF3-C88F-4A3A-8135-FCCB2A51CB92.png" class=""></li><li><code>sync</code>/<code>fsync</code>/<code>fdatasync</code>：将内存中的数据刷到磁盘<ol><li><code>sync</code>：只将修改过的 buffer 写入队列就返回，<strong>不等待实际的磁盘写操作结束</strong></li><li><code>fsync</code>：只对 fd 指定的一个文件起左右，并且<strong>等写磁盘操作结束才返回</strong></li><li><code>fdatasync</code>：类似 fsync 但是<strong>只影响数据部分</strong>，而 <code>fsync</code> 还会同步更新文件的属性</li></ol></li><li><code>int fcntl(int fd, int cmd, ... /*int arg*/)</code>，由 <code>cmd</code> 参数控制具体操作<ol><li>支持的操作<ol><li>复制已有 fd</li><li>获取/设置 fd 标志，当前只定义了 <code>FD_CLOEXEC</code></li><li>获取/设置文件状态标志</li><li>获取/设置记录锁</li></ol></li><li>修改 fd 标志和文件状态标志时，<strong>必须先获得现在的值，修改后设置新值</strong>，否则会关闭之前设置的标志位</li><li><code>fcntl</code> 只需要 fd 作为参数，而不需要文件名，对于管道能场景很有用</li></ol></li><li>打开 ‘/dev/fd’ 下的文件，等效于 <code>dup</code></li></ol><h2 id="文件共享"><a href="#文件共享" class="headerlink" title="文件共享"></a>文件共享</h2><ol><li>内核使用 3 种数据结构表示打开文件，即文件描述符表、文件表、v-node<ol><li>文件描述符表：每个进程一张，每个 fd 占一项，与 fd 关联的是 <em>close_on_exec</em> 和指向文件表项的指针</li><li>打开文件表，每个表项包括文件状态标志(flags)、当前文件偏移量、指向改文件 v-node 表项的指针</li><li>v-node：包含了<strong>文件类型</strong>和对该文件进行各种<strong>操作的指针</strong>，以及 i-node <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/3-file-io/71815891-579F-41BA-87F6-710C9515A5A8.png" class=""> <img src="/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/3-file-io/17895ADC-DDE2-4DC3-9A76-F6D38E31B6A2.png" class=""></li></ol></li></ol><h2 id="原子操作"><a href="#原子操作" class="headerlink" title="原子操作"></a>原子操作</h2><ol><li>没有使用 <code>O_APPEND</code> 模式打开时，<code>lseek</code> 到文件末尾，然后再 <code>write</code> 没有原子性保证，如果多进程写同一个文件，则会相互覆盖，正确做法是使用 <code>O_APPEND</code> 模式打开</li><li><code>pread</code> 和 <code>pwrite</code> 保证原子性读写<ol><li>调用 pread 是<strong>无法中断</strong>其定位和操作</li><li>不更新当前文件偏移量</li></ol></li></ol>]]></content>
-    
-    <summary type="html">
-    
-      
-      
-        &lt;ol&gt;
-&lt;li&gt;特殊 fd&lt;ol&gt;
-&lt;li&gt;&lt;code&gt;0&lt;/code&gt;：STDIN&lt;/li&gt;
-&lt;li&gt;&lt;code&gt;1&lt;/code&gt;: STDOUT&lt;/li&gt;
-&lt;li&gt;&lt;code&gt;2&lt;/code&gt;: STDERR&lt;/li&gt;
-&lt;/ol&gt;
-&lt;/li&gt;
-&lt;li&gt;延迟写（delayed
-      
-    
-    </summary>
-    
-    
-    
-      <category term="apue" scheme="http://xiaozongyang.github.io/tags/apue/"/>
-    
-      <category term="unix" scheme="http://xiaozongyang.github.io/tags/unix/"/>
-    
-      <category term="读书笔记" scheme="http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/"/>
-    
-  </entry>
-  
-  <entry>
-    <title>第 2 章 - UNIX 标准及实现</title>
-    <link href="http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/2-unix-standardization-and-implementations/"/>
-    <id>http://xiaozongyang.github.io/2021/10/09/Advanced-Programming-in-the-UNIX-Environment/2-unix-standardization-and-implementations/</id>
-    <published>2021-10-09T10:22:11.000Z</published>
-    <updated>2022-01-04T04:18:52.516Z</updated>
-    
-    <content type="html"><![CDATA[<ol><li>ISO ANSI 标准：由国际标准化组织制定，定义了 ISO C 标准</li><li>IEEE POSIX：Portable Operating System Interface，定义了操作系统标准接口，而没有提供实现</li><li>Single UNIX Specification：POSIX.1 的超集，定义了一些附加接口，扩展了 POSIS。1 提供的功能</li><li>只有遵循 XSI(X/Open System Interface)的实现才能称为 Unix 系统</li><li>UNIX 环境的限制<ol><li>编译时限制：头文件，如 int 的最大值</li><li>运行时限制<ol><li>与文件或目录<strong>无关</strong>的运行时限制，(sysconf)</li><li>与文件或目录<strong>有关</strong>的运行时限制，(pathconf, fpathconf)</li></ol></li></ol></li></ol>]]></content>
-    
-    <summary type="html">
-    
-      
-      
-        &lt;ol&gt;
-&lt;li&gt;ISO ANSI 标准：由国际标准化组织制定，定义了 ISO C 标准&lt;/li&gt;
-&lt;li&gt;IEEE POSIX：Portable Operating System Interface，定义了操作系统标准接口，而没有提供实现&lt;/li&gt;
-&lt;li&gt;Single UNI
       
     
     </summary>
