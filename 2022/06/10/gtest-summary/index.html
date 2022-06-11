@@ -26,7 +26,7 @@
 <meta property="og:description" content="Tips ASSERT_* 与 EXPECT_*  语义：在检查条件失败时，ASSERT_* 会导致程序异常退出，而 EXPECT_* 会继续执行 使用场景: ASSERT_* 适用于断言测试程序的前置条件，例如 server 有没有正常启动，在这种情况下后续的测试都没有意义 EXPECT_* 适用于对后置结果的检查，依次检查实际结果与预期是否相符，如果有多个不符的检查，会依次打印出来而不需要多次">
 <meta property="og:locale" content="zh_CN">
 <meta property="article:published_time" content="2022-06-10T10:32:51.000Z">
-<meta property="article:modified_time" content="2022-06-11T10:34:33.230Z">
+<meta property="article:modified_time" content="2022-06-11T10:44:14.034Z">
 <meta property="article:author" content="Xiao Zongyang">
 <meta property="article:tag" content="gtest">
 <meta property="article:tag" content="c++">
@@ -390,7 +390,7 @@
 <h2 id="一个例子"><a href="#一个例子" class="headerlink" title="一个例子"></a>一个例子</h2><pre><code class="cpp"><span class="class"><span class="keyword">class</span> <span class="title">Foo</span> {</span>
  <span class="keyword">public</span>:
   ...
-  <span class="function"><span class="keyword">virtual</span> <span class="keyword">bool</span> <span class="title">Transform</span><span class="params">(Gadget* g)</span> </span>= <span class="number">0</span>;
+ <span class="function"><span class="keyword">virtual</span> <span class="keyword">void</span> <span class="title">SetTimeOut</span><span class="params">(<span class="keyword">int</span> t)</span></span>;
 
  <span class="keyword">protected</span>:
   <span class="function"><span class="keyword">virtual</span> <span class="keyword">void</span> <span class="title">Resume</span><span class="params">()</span></span>;
@@ -408,6 +408,7 @@
   <span class="comment">// methods are protected or private in the base class.</span>
   MOCK_METHOD(<span class="keyword">void</span>, Resume, (), (<span class="keyword">override</span>));
   MOCK_METHOD(<span class="keyword">int</span>, GetTimeOut, (), (<span class="keyword">override</span>));
+  MOCK_METHOD(<span class="keyword">void</span>, SetTimeOut, (_), (<span class="keyword">override</span>));
 };
 
 TEST(FooTest, Example) {
@@ -421,9 +422,13 @@ TEST(FooTest, Example) {
     foo.Resume();
 
     <span class="comment">// 检查 mock function 调用次数</span>
-    EXPECT_CALL(foo.Resume()).Times(<span class="number">1</span>);
+    EXPECT_CALL(foo, Resume()).Times(<span class="number">1</span>);
 
     EXPECT_EQ(<span class="number">10</span>, foo.GetTimeOut());
+
+    foo.SetTimeOut(<span class="number">10</span>);
+    <span class="comment">// 检查传递给 mock function 的参数值</span>
+    EXPECT_CALL(foo, SetTimeOut(Eq(<span class="number">10</span>))
 }
 </code></pre>
 
