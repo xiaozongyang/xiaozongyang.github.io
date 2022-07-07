@@ -2,6 +2,15 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   
   <url>
+    <loc>http://xiaozongyang.github.io/2022/07/07/brpc-channel-init-summary/</loc>
+    
+    <lastmod>2022-07-07</lastmod>
+    
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  
+  <url>
     <loc>http://xiaozongyang.github.io/2022/06/10/gtest-summary/</loc>
     
     <lastmod>2022-06-11</lastmod>
@@ -418,7 +427,7 @@
 
   <url>
     <loc>http://xiaozongyang.github.io/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
@@ -426,182 +435,189 @@
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/java/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/maven/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/arts/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/prometheus/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/victoriametrics/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/mq/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/pulsar/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/rocketmq/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/jmh/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/benchmark/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/kotlin/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/pulsar/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/%E6%BA%90%E7%A0%81%E9%98%85%E8%AF%BB/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/summary/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/apue/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/unix/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/%E8%AF%BB%E4%B9%A6%E7%AC%94%E8%AE%B0/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/%E5%AD%98%E5%82%A8/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/%E5%88%86%E5%B8%83%E5%BC%8F/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/%E6%96%87%E4%BB%B6%E7%B3%BB%E7%BB%9F/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/kv/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/paper/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/storage/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/note/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/gtest/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
   
   <url>
     <loc>http://xiaozongyang.github.io/tags/c/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.2</priority>
+  </url>
+  
+  <url>
+    <loc>http://xiaozongyang.github.io/tags/brpc/</loc>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
@@ -610,7 +626,7 @@
   
   <url>
     <loc>http://xiaozongyang.github.io/categories/summary/</loc>
-    <lastmod>2022-06-11</lastmod>
+    <lastmod>2022-07-07</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.2</priority>
   </url>
